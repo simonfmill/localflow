@@ -1,0 +1,251 @@
+import numpy as np
+
+from localflow.app import IDLE, PROCESSING, RECORDING, LocalFlowApp
+from localflow.contracts import AppContext, CleanupResult, Transcript
+
+SR = 16000
+
+
+class FakeRecorder:
+    def __init__(self, audio=None):
+        self.block_listeners = []
+        self.audio = audio if audio is not None else np.zeros(SR, dtype=np.float32)
+        self.started = 0
+        self.stopped = 0
+
+    def open(self):
+        pass
+
+    def start(self):
+        self.started += 1
+
+    def stop(self):
+        self.stopped += 1
+        return self.audio
+
+
+class FakeASR:
+    def __init__(self, text="um hello world"):
+        self.text = text
+        self.calls = []
+
+    def transcribe(self, wav):
+        self.calls.append(wav)
+        return Transcript(text=self.text, segments=[], lang="en", duration_s=1.0)
+
+
+class FakeCleaner:
+    def __init__(self):
+        self.requests = []
+
+    def clean(self, req):
+        self.requests.append(req)
+        return CleanupResult(text="Hello world.")
+
+
+class FakeCommander:
+    def __init__(self, result="Rewritten."):
+        self.requests = []
+        self.result = result
+
+    def run(self, req):
+        self.requests.append(req)
+        return self.result
+
+
+class FakeInjector:
+    def __init__(self):
+        self.pasted = []
+
+    def paste(self, text, ctx):
+        self.pasted.append((text, ctx))
+
+
+class FakeDictionary:
+    terms = ["Qwen"]
+
+
+class FakeHotkey:
+    def __init__(self):
+        self.press_cb = None
+        self.release_cb = None
+        self.started = False
+
+    def on_press(self, cb):
+        self.press_cb = cb
+
+    def on_release(self, cb):
+        self.release_cb = cb
+
+    def start(self):
+        self.started = True
+
+
+class FakeTray:
+    def __init__(self):
+        self.enabled = True
+        self.recording_states = []
+        self.ran = False
+
+    def set_recording(self, value):
+        self.recording_states.append(value)
+
+    def run(self):
+        self.ran = True
+
+
+class FakeVad:
+    def __init__(self, stop_after=None):
+        self.fed = 0
+        self.resets = 0
+        self.stop_after = stop_after
+
+    def reset(self):
+        self.resets += 1
+
+    def feed(self, block):
+        self.fed += 1
+        return self.stop_after is not None and self.fed >= self.stop_after
+
+
+CTX = AppContext("com.tinyspeck.slackmacgap", "Slack", "chat")
+
+
+def make_app(**overrides):
+    parts = dict(
+        recorder=FakeRecorder(),
+        asr=FakeASR(),
+        cleaner=FakeCleaner(),
+        commander=FakeCommander(),
+        injector=FakeInjector(),
+        context_provider=lambda: CTX,
+        dictionary=FakeDictionary(),
+        hotkey=FakeHotkey(),
+        tray=FakeTray(),
+        vad=None,
+        threaded=False,
+    )
+    parts.update(overrides)
+    return LocalFlowApp(**parts), parts
+
+
+def test_press_starts_recording():
+    app, p = make_app()
+    app._on_hotkey_press()
+    assert app.state == RECORDING
+    assert p["recorder"].started == 1
+    assert p["tray"].recording_states == [True]
+
+
+def test_release_runs_dictation_pipeline():
+    app, p = make_app()
+    app._on_hotkey_press()
+    app._on_hotkey_release()
+    assert app.state == IDLE
+    assert p["recorder"].stopped == 1
+    assert p["tray"].recording_states == [True, False]
+    assert len(p["asr"].calls) == 1
+    req = p["cleaner"].requests[0]
+    assert req.raw_text == "um hello world"
+    assert req.dictionary == ["Qwen"]
+    assert "chat" in req.profile
+    assert "Slack" in req.context_hint
+    assert p["injector"].pasted == [("Hello world.", CTX)]
+    assert p["commander"].requests == []
+    assert app.last_pasted == "Hello world."
+
+
+def test_trigger_phrase_routes_to_command_mode():
+    app, p = make_app(asr=FakeASR(text="voice command make this more formal"))
+    app._on_hotkey_press()
+    app._on_hotkey_release()
+    assert p["cleaner"].requests == []
+    cmd = p["commander"].requests[0]
+    assert cmd.instruction == "make this more formal"
+    assert cmd.selection is None
+    assert p["injector"].pasted == [("Rewritten.", CTX)]
+
+
+def test_selection_routes_to_command_mode():
+    app, p = make_app(asr=FakeASR(text="translate this to german"),
+                      selection_provider=lambda: "good morning")
+    app._on_hotkey_press()
+    app._on_hotkey_release()
+    cmd = p["commander"].requests[0]
+    assert cmd.instruction == "translate this to german"
+    assert cmd.selection == "good morning"
+
+
+def test_short_audio_is_dropped():
+    short = np.zeros(int(0.1 * SR), dtype=np.float32)
+    app, p = make_app(recorder=FakeRecorder(audio=short))
+    app._on_hotkey_press()
+    app._on_hotkey_release()
+    assert p["asr"].calls == []
+    assert p["injector"].pasted == []
+    assert app.state == IDLE
+
+
+def test_empty_transcript_is_dropped():
+    app, p = make_app(asr=FakeASR(text="   "))
+    app._on_hotkey_press()
+    app._on_hotkey_release()
+    assert p["cleaner"].requests == []
+    assert p["injector"].pasted == []
+
+
+def test_empty_command_result_is_not_pasted():
+    app, p = make_app(asr=FakeASR(text="voice command do something"),
+                      commander=FakeCommander(result=""))
+    app._on_hotkey_press()
+    app._on_hotkey_release()
+    assert p["injector"].pasted == []
+
+
+def test_disabled_via_tray_ignores_press():
+    app, p = make_app()
+    p["tray"].enabled = False
+    app._on_hotkey_press()
+    assert app.state == IDLE
+    assert p["recorder"].started == 0
+
+
+def test_vad_auto_stops_recording():
+    vad = FakeVad(stop_after=3)
+    app, p = make_app(vad=vad)
+    app._on_hotkey_press()
+    assert vad.resets == 1
+    block = np.zeros(1600, dtype=np.float32)
+    for _ in range(3):
+        app._on_block(block)
+    assert app.state == IDLE  # release path ran via VAD
+    assert p["recorder"].stopped == 1
+    assert p["injector"].pasted  # pipeline completed
+
+
+def test_release_without_recording_is_noop():
+    app, p = make_app()
+    app._on_hotkey_release()
+    assert p["recorder"].stopped == 0
+    assert app.state == IDLE
+
+
+def test_run_wires_hotkey_and_tray():
+    app, p = make_app(asr=FakeASR())
+    app.run()
+    hk = p["hotkey"]
+    assert hk.started
+    assert hk.press_cb == app._on_hotkey_press
+    assert hk.release_cb == app._on_hotkey_release
+    assert p["tray"].ran
+
+
+def test_double_press_is_ignored_while_recording():
+    app, p = make_app()
+    app._on_hotkey_press()
+    app._on_hotkey_press()
+    assert p["recorder"].started == 1
+
+
+def test_state_constants():
+    assert (IDLE, RECORDING, PROCESSING) == ("idle", "recording", "processing")

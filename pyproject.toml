@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "localflow"
+version = "0.1.0"
+description = "Fully-local push-to-talk voice dictation for macOS (faster-whisper + Ollama)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "faster-whisper>=1.0",
+    "ctranslate2>=4.0",
+    "sounddevice>=0.4.6",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "requests>=2.31",
+    "pynput>=1.7.6",
+    "pyperclip>=1.8",
+    "ruamel.yaml>=0.18",
+    "pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'",
+    "pyobjc-framework-ApplicationServices>=10.0; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'",
+    "rumps>=0.4; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-mock>=3.12", "ruff>=0.4"]
+# ten-vad is optional; localflow.vad falls back to an energy threshold when absent.
+vad = ["ten-vad"]
+
+[project.scripts]
+localflow = "localflow.__main__:main"
+
+[tool.setuptools]
+packages = ["localflow"]
+
+[tool.setuptools.package-data]
+localflow = ["*.yaml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

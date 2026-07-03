@@ -1,0 +1,37 @@
+hotkey:
+  # Push-to-talk combo. Most Mac keyboards never deliver a key-down event for
+  # Fn to userspace listeners, so ordinary modifiers are the reliable default.
+  combo: "cmd+alt"
+
+audio:
+  samplerate: 16000
+  channels: 1
+  preroll_ms: 500
+
+vad:
+  enabled: true
+  energy_threshold: 0.01
+  silence_ms: 900
+  min_speech_ms: 200
+
+whisper:
+  # "small" is multilingual (auto-detects the spoken language);
+  # use "small.en" for slightly better English-only accuracy.
+  model: "small"
+  device: "auto"
+  compute_type: "int8"
+
+ollama:
+  base_url: "http://localhost:11434"
+  model: "qwen2.5:7b"
+  fallback_model: "qwen2.5:3b"
+  timeout_s: 30
+
+dictionary:
+  path: "~/.config/localflow/dictionary.json"
+
+paste:
+  restore_clipboard_after_ms: 300
+
+pipeline:
+  min_duration_s: 0.3
