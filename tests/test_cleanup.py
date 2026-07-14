@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from localflow.cleanup import SYSTEM_PROMPT, OllamaCleaner
+from localflow.cleanup import SYSTEM_PROMPT, OllamaCleaner, is_faithful
 from localflow.contracts import CleanupRequest, CleanupResult
 
 from conftest import FakeOllamaSession
@@ -16,9 +16,47 @@ def req(**kwargs):
 
 
 def test_system_prompt_has_worked_examples():
-    assert SYSTEM_PROMPT.count("Input:") == 7
-    assert SYSTEM_PROMPT.count("Output:") == 7
+    assert SYSTEM_PROMPT.count("Input:") == 8
+    assert SYSTEM_PROMPT.count("Output:") == 8
     assert "erstens" in SYSTEM_PROMPT  # German list example
+    assert "NOT an assistant" in SYSTEM_PROMPT
+
+
+def test_is_faithful_accepts_normal_cleanups():
+    assert is_faithful("um so hey team uh lets ship this on friday",
+                       "Hey team, let's ship this on Friday.")
+    assert is_faithful("wir brauchen erstens milch zweitens brot und drittens eier",
+                       "Wir brauchen:\n1. Milch\n2. Brot\n3. Eier")
+    assert is_faithful("the meeting is at 3 pm no wait scratch that 4 pm tomorrow",
+                       "The meeting is at 4 PM tomorrow.")
+
+
+def test_is_faithful_allows_dictionary_respellings():
+    assert is_faithful("lets talk about the kwen rollout",
+                       "Let's talk about the Qwen rollout.", dictionary=["Qwen"])
+
+
+def test_is_faithful_rejects_answers():
+    # The model answered the dictated question instead of cleaning it.
+    assert not is_faithful(
+        "wie kann ich herausfinden ob der server noch läuft",
+        "Du kannst mit dem Befehl ping oder systemctl status prüfen, "
+        "ob dein Server erreichbar ist und ordnungsgemäß funktioniert.")
+    assert not is_faithful(
+        "what is the capital of france",
+        "The capital of France is Paris, which has been the country's "
+        "political and cultural center for many centuries.")
+    assert not is_faithful("hello", "")
+
+
+def test_clean_falls_back_to_raw_when_model_answers():
+    session = FakeOllamaSession(
+        content="Du kannst das mit ping oder systemctl status herausfinden.")
+    cleaner = OllamaCleaner(session=session)
+    raw = "wie kann ich herausfinden ob der server noch läuft"
+    result = cleaner.clean(req(raw_text=raw))
+    assert result.text == raw  # answer suppressed, raw transcript pasted
+    assert len(session.calls) == 1  # no pointless retry on the fallback model
 
 
 def test_build_messages_includes_dictionary_profile_and_context():
