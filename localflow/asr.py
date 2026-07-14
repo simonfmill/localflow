@@ -12,26 +12,32 @@ from localflow.contracts import Transcript
 
 class WhisperEngine:
     def __init__(self, model_name="small.en", device="auto", compute_type="int8",
-                 model_factory=None):
+                 language=None, cpu_threads=8, model_factory=None):
         self.model_name = model_name
         self.device = device
         self.compute_type = compute_type
+        # Pinning a language ("de", "en", …) skips the per-utterance
+        # language-detection pass; None/"auto" keeps auto-detection.
+        self.language = None if language in (None, "", "auto") else language
+        self.cpu_threads = cpu_threads
         self._model_factory = model_factory
         self._model = None
 
     @staticmethod
-    def _default_factory(model_name, device, compute_type):
+    def _default_factory(model_name, device, compute_type, cpu_threads):
         from faster_whisper import WhisperModel
 
-        return WhisperModel(model_name, device=device, compute_type=compute_type)
+        return WhisperModel(model_name, device=device, compute_type=compute_type,
+                            cpu_threads=cpu_threads)
 
     def load(self):
         if self._model is None:
             factory = self._model_factory or self._default_factory
             try:
-                self._model = factory(self.model_name, self.device, self.compute_type)
+                self._model = factory(self.model_name, self.device, self.compute_type,
+                                      self.cpu_threads)
             except Exception:
-                self._model = factory(self.model_name, "cpu", "int8")
+                self._model = factory(self.model_name, "cpu", "int8", self.cpu_threads)
         return self._model
 
     def warmup(self):
@@ -41,7 +47,9 @@ class WhisperEngine:
     def transcribe(self, wav) -> Transcript:
         """Transcribe 16 kHz mono audio (float32 ndarray or WAV bytes)."""
         audio = self._to_audio(wav)
-        segments, info = self.load().transcribe(audio, beam_size=1)
+        segments, info = self.load().transcribe(
+            audio, beam_size=1, language=self.language,
+            condition_on_previous_text=False)
         seg_list = [{"start": s.start, "end": s.end, "text": s.text} for s in segments]
         text = " ".join(s["text"].strip() for s in seg_list).strip()
         duration = float(getattr(info, "duration", audio.size / 16000))

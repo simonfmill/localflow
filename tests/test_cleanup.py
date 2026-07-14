@@ -49,7 +49,21 @@ def test_clean_posts_to_ollama_and_parses_response():
     assert call["url"] == "http://localhost:11434/api/chat"
     assert call["json"]["model"] == "qwen2.5:7b"
     assert call["json"]["stream"] is False
+    assert call["json"]["keep_alive"] == "30m"
     assert call["timeout"] == 30
+
+
+def test_warmup_posts_a_tiny_request_and_swallows_errors():
+    session = FakeOllamaSession()
+    cleaner = OllamaCleaner(session=session, keep_alive="1h")
+    cleaner.warmup()
+    call = session.calls[0]["json"]
+    assert call["model"] == "qwen2.5:7b"
+    assert call["keep_alive"] == "1h"
+    assert call["options"]["num_predict"] == 1
+
+    dead = FakeOllamaSession(error_models={"qwen2.5:7b"})
+    OllamaCleaner(session=dead).warmup()  # must not raise
 
 
 def test_falls_back_to_secondary_model_on_404():

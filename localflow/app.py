@@ -3,9 +3,11 @@
 
 import logging
 import threading
+import time
 
 from localflow import command_mode, profiles
 from localflow.contracts import CleanupRequest, CommandRequest
+from localflow.vad import rms
 
 log = logging.getLogger("localflow")
 
@@ -17,8 +19,8 @@ PROCESSING = "processing"
 class LocalFlowApp:
     def __init__(self, *, recorder, asr, cleaner, commander, injector,
                  context_provider, dictionary, hotkey, tray=None, vad=None,
-                 selection_provider=None, min_duration_s=0.3, samplerate=16000,
-                 threaded=True):
+                 overlay=None, selection_provider=None, min_duration_s=0.3,
+                 samplerate=16000, threaded=True):
         self.recorder = recorder
         self.asr = asr
         self.cleaner = cleaner
@@ -29,6 +31,7 @@ class LocalFlowApp:
         self.hotkey = hotkey
         self.tray = tray
         self.vad = vad
+        self.overlay = overlay
         self.selection_provider = selection_provider
         self.min_duration_s = min_duration_s
         self.samplerate = samplerate
@@ -60,8 +63,12 @@ class LocalFlowApp:
             self.recorder.start()
             if self.tray is not None:
                 self.tray.set_recording(True)
+            if self.overlay is not None:
+                self.overlay.show()
         except Exception:
             log.exception("failed to start recording")
+            if self.overlay is not None:
+                self.overlay.hide()
             with self._lock:
                 self._state = IDLE
 
@@ -76,8 +83,12 @@ class LocalFlowApp:
                      len(audio) / self.samplerate)
             if self.tray is not None:
                 self.tray.set_recording(False)
+            if self.overlay is not None:
+                self.overlay.hide()
         except Exception:
             log.exception("failed to stop recording")
+            if self.overlay is not None:
+                self.overlay.hide()
             with self._lock:
                 self._state = IDLE
             return
@@ -96,21 +107,27 @@ class LocalFlowApp:
                 self._state = IDLE
 
     def _on_block(self, block):
-        """Audio-thread callback: VAD auto-stop while recording."""
-        if self._state == RECORDING and self.vad is not None and self.vad.feed(block):
+        """Audio-thread callback: waveform overlay levels + VAD auto-stop."""
+        if self._state != RECORDING:
+            return
+        if self.overlay is not None:
+            self.overlay.feed(rms(block))
+        if self.vad is not None and self.vad.feed(block):
             self._on_hotkey_release()
 
     def process(self, audio):
         if len(audio) < self.min_duration_s * self.samplerate:
             log.info("capture too short (< %.1fs) — dropped", self.min_duration_s)
             return
+        t0 = time.perf_counter()
         transcript = self.asr.transcribe(audio)
         text = transcript.text.strip()
-        log.info("transcript: %r", text)
+        log.info("transcript (asr %.2fs): %r", time.perf_counter() - t0, text)
         if not text:
             return
         ctx = self.context_provider()
         selection = self.selection_provider() if self.selection_provider else None
+        t1 = time.perf_counter()
         if command_mode.is_command(text, selection):
             result = self.commander.run(
                 CommandRequest(instruction=command_mode.strip_trigger(text),
@@ -125,11 +142,16 @@ class LocalFlowApp:
             )
             result = self.cleaner.clean(req).text
         if result:
-            log.info("pasting into %s (%s): %r", ctx.app_name or "?", ctx.kind, result)
+            log.info("pasting into %s (%s) (llm %.2fs): %r",
+                     ctx.app_name or "?", ctx.kind, time.perf_counter() - t1, result)
             self.injector.paste(result, ctx)
             self.last_pasted = result
 
     def run(self):
+        if hasattr(self.cleaner, "warmup"):
+            # Load the LLM into Ollama in parallel with the whisper warmup so
+            # the very first dictation is already fast.
+            threading.Thread(target=self.cleaner.warmup, daemon=True).start()
         if hasattr(self.asr, "warmup"):
             log.info("warming up whisper model…")
             try:
@@ -159,6 +181,7 @@ def build_default(cfg: dict) -> LocalFlowApp:
     from localflow.dictionary import PersonalDictionary
     from localflow.hotkey import PushToTalkListener
     from localflow.inject import ClipboardInjector
+    from localflow.overlay import RecordingOverlay
     from localflow.tray import LocalFlowTray
     from localflow.vad import SilenceDetector
 
@@ -174,21 +197,28 @@ def build_default(cfg: dict) -> LocalFlowApp:
                               min_speech_ms=vad_cfg["min_speech_ms"])
     whisper_cfg = cfg["whisper"]
     asr = WhisperEngine(model_name=whisper_cfg["model"], device=whisper_cfg["device"],
-                        compute_type=whisper_cfg["compute_type"])
+                        compute_type=whisper_cfg["compute_type"],
+                        language=whisper_cfg.get("language", "auto"),
+                        cpu_threads=whisper_cfg.get("cpu_threads", 8))
     ollama_cfg = cfg["ollama"]
+    keep_alive = ollama_cfg.get("keep_alive", "30m")
     cleaner = OllamaCleaner(base_url=ollama_cfg["base_url"], model=ollama_cfg["model"],
                             fallback_model=ollama_cfg["fallback_model"],
-                            timeout_s=ollama_cfg["timeout_s"])
+                            timeout_s=ollama_cfg["timeout_s"], keep_alive=keep_alive)
     commander = CommandRunner(base_url=ollama_cfg["base_url"], model=ollama_cfg["model"],
                               fallback_model=ollama_cfg["fallback_model"],
-                              timeout_s=ollama_cfg["timeout_s"])
+                              timeout_s=ollama_cfg["timeout_s"], keep_alive=keep_alive)
     dictionary = PersonalDictionary(cfg["dictionary"]["path"])
     injector = ClipboardInjector(
         restore_delay_s=cfg["paste"]["restore_clipboard_after_ms"] / 1000)
     hotkey = PushToTalkListener(combo=cfg["hotkey"]["combo"])
     tray = LocalFlowTray(dictionary_path=dictionary.path)
+    overlay_cfg = cfg.get("overlay", {})
+    overlay = None
+    if overlay_cfg.get("enabled", True):
+        overlay = RecordingOverlay(position=overlay_cfg.get("position", "bottom-center"))
     return LocalFlowApp(recorder=recorder, asr=asr, cleaner=cleaner, commander=commander,
                         injector=injector, context_provider=detect, dictionary=dictionary,
-                        hotkey=hotkey, tray=tray, vad=vad,
+                        hotkey=hotkey, tray=tray, vad=vad, overlay=overlay,
                         min_duration_s=cfg["pipeline"]["min_duration_s"],
                         samplerate=audio_cfg["samplerate"])

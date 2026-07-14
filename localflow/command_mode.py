@@ -39,11 +39,13 @@ def strip_trigger(text: str) -> str:
 
 class CommandRunner:
     def __init__(self, base_url="http://localhost:11434", model="qwen2.5:7b",
-                 fallback_model="qwen2.5:3b", timeout_s=30, session=None):
+                 fallback_model="qwen2.5:3b", timeout_s=30, keep_alive="30m",
+                 session=None):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.fallback_model = fallback_model
         self.timeout_s = timeout_s
+        self.keep_alive = keep_alive
         self._session = session or requests.Session()
 
     def build_messages(self, req: CommandRequest) -> list:
@@ -70,6 +72,7 @@ class CommandRunner:
                     "model": model,
                     "messages": messages,
                     "stream": False,
+                    "keep_alive": self.keep_alive,
                     "options": {"temperature": 0},
                 },
                 timeout=self.timeout_s,

@@ -54,12 +54,30 @@ Output: Let's circle back on the Qwen rollout with DevOps."""
 
 class OllamaCleaner:
     def __init__(self, base_url="http://localhost:11434", model="qwen2.5:7b",
-                 fallback_model="qwen2.5:3b", timeout_s=30, session=None):
+                 fallback_model="qwen2.5:3b", timeout_s=30, keep_alive="30m",
+                 session=None):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.fallback_model = fallback_model
         self.timeout_s = timeout_s
+        # Keep the model loaded in Ollama between dictations; without this
+        # Ollama unloads after ~5 min idle and the next request pays a
+        # multi-second cold start.
+        self.keep_alive = keep_alive
         self._session = session or requests.Session()
+
+    def warmup(self):
+        """Load the model into Ollama's memory so the first request is fast."""
+        try:
+            self._session.post(
+                f"{self.base_url}/api/chat",
+                json={"model": self.model,
+                      "messages": [{"role": "user", "content": "ok"}],
+                      "stream": False, "keep_alive": self.keep_alive,
+                      "options": {"num_predict": 1}},
+                timeout=self.timeout_s)
+        except requests.RequestException:
+            pass
 
     def build_messages(self, req: CleanupRequest) -> list:
         parts = [SYSTEM_PROMPT]
@@ -91,6 +109,7 @@ class OllamaCleaner:
                     "model": model,
                     "messages": messages,
                     "stream": False,
+                    "keep_alive": self.keep_alive,
                     "options": {"temperature": 0},
                 },
                 timeout=self.timeout_s,

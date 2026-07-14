@@ -108,6 +108,20 @@ class FakeVad:
         return self.stop_after is not None and self.fed >= self.stop_after
 
 
+class FakeOverlay:
+    def __init__(self):
+        self.events = []
+
+    def show(self):
+        self.events.append("show")
+
+    def hide(self):
+        self.events.append("hide")
+
+    def feed(self, level):
+        self.events.append(("feed", round(level, 3)))
+
+
 CTX = AppContext("com.tinyspeck.slackmacgap", "Slack", "chat")
 
 
@@ -249,3 +263,30 @@ def test_double_press_is_ignored_while_recording():
 
 def test_state_constants():
     assert (IDLE, RECORDING, PROCESSING) == ("idle", "recording", "processing")
+
+
+def test_overlay_shows_on_press_and_hides_on_release():
+    overlay = FakeOverlay()
+    app, _ = make_app(overlay=overlay)
+    app._on_hotkey_press()
+    assert overlay.events == ["show"]
+    app._on_hotkey_release()
+    assert overlay.events == ["show", "hide"]
+
+
+def test_overlay_receives_mic_levels_while_recording():
+    overlay = FakeOverlay()
+    app, _ = make_app(overlay=overlay)
+    block = np.full(1600, 0.5, dtype=np.float32)
+    app._on_block(block)  # idle — ignored
+    assert overlay.events == []
+    app._on_hotkey_press()
+    app._on_block(block)
+    assert ("feed", 0.5) in overlay.events
+
+
+def test_no_overlay_is_fine():
+    app, p = make_app(overlay=None)
+    app._on_hotkey_press()
+    app._on_hotkey_release()
+    assert p["injector"].pasted  # pipeline unaffected
