@@ -120,7 +120,8 @@ class LocalFlowApp:
             log.info("capture too short (< %.1fs) — dropped", self.min_duration_s)
             return
         t0 = time.perf_counter()
-        transcript = self.asr.transcribe(audio)
+        hotwords = ", ".join(self.dictionary.terms) or None
+        transcript = self.asr.transcribe(audio, hotwords=hotwords)
         text = transcript.text.strip()
         log.info("transcript (asr %.2fs): %r", time.perf_counter() - t0, text)
         if not text:
@@ -212,13 +213,21 @@ def build_default(cfg: dict) -> LocalFlowApp:
     injector = ClipboardInjector(
         restore_delay_s=cfg["paste"]["restore_clipboard_after_ms"] / 1000)
     hotkey = PushToTalkListener(combo=cfg["hotkey"]["combo"])
-    tray = LocalFlowTray(dictionary_path=dictionary.path)
     overlay_cfg = cfg.get("overlay", {})
     overlay = None
     if overlay_cfg.get("enabled", True):
         overlay = RecordingOverlay(position=overlay_cfg.get("position", "bottom-center"))
-    return LocalFlowApp(recorder=recorder, asr=asr, cleaner=cleaner, commander=commander,
-                        injector=injector, context_provider=detect, dictionary=dictionary,
-                        hotkey=hotkey, tray=tray, vad=vad, overlay=overlay,
-                        min_duration_s=cfg["pipeline"]["min_duration_s"],
-                        samplerate=audio_cfg["samplerate"])
+    app = LocalFlowApp(recorder=recorder, asr=asr, cleaner=cleaner, commander=commander,
+                       injector=injector, context_provider=detect, dictionary=dictionary,
+                       hotkey=hotkey, tray=None, vad=vad, overlay=overlay,
+                       min_duration_s=cfg["pipeline"]["min_duration_s"],
+                       samplerate=audio_cfg["samplerate"])
+
+    def _learn_correction(old, new):
+        added = dictionary.observe_correction(old, new)
+        log.info("dictionary learned: %s", ", ".join(added) if added else "nothing new")
+
+    app.tray = LocalFlowTray(dictionary_path=dictionary.path,
+                             get_last_text=lambda: app.last_pasted,
+                             on_correction=_learn_correction)
+    return app

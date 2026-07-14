@@ -13,9 +13,9 @@ class FakeModel:
         self.calls = []
 
     def transcribe(self, audio, beam_size=1, language=None,
-                   condition_on_previous_text=True):
+                   condition_on_previous_text=True, hotwords=None):
         self.calls.append({"audio": audio, "beam_size": beam_size,
-                           "language": language})
+                           "language": language, "hotwords": hotwords})
         segments = iter([
             SimpleNamespace(start=0.0, end=1.0, text=" hello"),
             SimpleNamespace(start=1.0, end=2.0, text="world "),
@@ -73,6 +73,29 @@ def test_language_auto_passes_none_pinned_passes_code():
     engine = WhisperEngine(language="de", model_factory=lambda *a: pinned)
     engine.transcribe(np.zeros(16000, dtype=np.float32))
     assert pinned.calls[0]["language"] == "de"
+
+
+def test_hotwords_are_passed_to_the_model():
+    model = FakeModel()
+    engine = WhisperEngine(model_factory=lambda *a: model)
+    engine.transcribe(np.zeros(16000, dtype=np.float32), hotwords="Qwen, Sarah")
+    assert model.calls[0]["hotwords"] == "Qwen, Sarah"
+    engine.transcribe(np.zeros(16000, dtype=np.float32))
+    assert model.calls[1]["hotwords"] is None
+
+
+def test_hotwords_dropped_for_old_faster_whisper():
+    class OldModel(FakeModel):
+        def transcribe(self, audio, beam_size=1, language=None,
+                       condition_on_previous_text=True, **kwargs):
+            if "hotwords" in kwargs:
+                raise TypeError("unexpected keyword argument 'hotwords'")
+            return super().transcribe(audio, beam_size, language,
+                                      condition_on_previous_text)
+
+    engine = WhisperEngine(model_factory=lambda *a: OldModel())
+    result = engine.transcribe(np.zeros(16000, dtype=np.float32), hotwords="Qwen")
+    assert result.text == "hello world"  # falls back, still transcribes
 
 
 def test_accepts_wav_bytes(wav_fixture_bytes):

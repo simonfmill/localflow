@@ -28,9 +28,11 @@ class FakeASR:
     def __init__(self, text="um hello world"):
         self.text = text
         self.calls = []
+        self.hotwords = []
 
-    def transcribe(self, wav):
+    def transcribe(self, wav, hotwords=None):
         self.calls.append(wav)
+        self.hotwords.append(hotwords)
         return Transcript(text=self.text, segments=[], lang="en", duration_s=1.0)
 
 
@@ -283,6 +285,13 @@ def test_overlay_receives_mic_levels_while_recording():
     app._on_hotkey_press()
     app._on_block(block)
     assert ("feed", 0.5) in overlay.events
+
+
+def test_dictionary_terms_become_asr_hotwords():
+    app, p = make_app()
+    app._on_hotkey_press()
+    app._on_hotkey_release()
+    assert p["asr"].hotwords == ["Qwen"]
 
 
 def test_no_overlay_is_fine():

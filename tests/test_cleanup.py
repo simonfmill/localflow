@@ -15,9 +15,10 @@ def req(**kwargs):
     return CleanupRequest(**defaults)
 
 
-def test_system_prompt_has_six_examples():
-    assert SYSTEM_PROMPT.count("Input:") == 6
-    assert SYSTEM_PROMPT.count("Output:") == 6
+def test_system_prompt_has_worked_examples():
+    assert SYSTEM_PROMPT.count("Input:") == 7
+    assert SYSTEM_PROMPT.count("Output:") == 7
+    assert "erstens" in SYSTEM_PROMPT  # German list example
 
 
 def test_build_messages_includes_dictionary_profile_and_context():

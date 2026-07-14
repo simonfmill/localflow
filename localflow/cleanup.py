@@ -22,8 +22,8 @@ never paraphrase or summarize. Every content word the speaker said stays, in \
 the speaker's order.
 4. Apply explicit self-corrections: if the speaker says "scratch that" or \
 "no wait", keep only the corrected wording.
-5. Turn clearly spoken enumerations ("first ... second ... third ...") into a \
-numbered list, one item per line.
+5. Turn clearly spoken enumerations ("first ... second ... third ...", \
+"erstens ... zweitens ... drittens ...") into a numbered list, one item per line.
 6. Spell personal-dictionary terms exactly as given, even if the transcript \
 spelled them differently.
 7. Reply in the same language as the transcript. Never translate: a German \
@@ -49,7 +49,13 @@ Input: can you send the deck to sarah before the standup
 Output: Can you send the deck to Sarah before the standup?
 
 Input: lets circle back on the qwen rollout with devops
-Output: Let's circle back on the Qwen rollout with DevOps."""
+Output: Let's circle back on the Qwen rollout with DevOps.
+
+Input: wir brauchen erstens milch zweitens brot und drittens eier
+Output: Wir brauchen:
+1. Milch
+2. Brot
+3. Eier"""
 
 
 class OllamaCleaner:
