@@ -256,6 +256,24 @@ def test_run_wires_hotkey_and_tray():
     assert p["tray"].ran
 
 
+def test_correction_hotkey_opens_tray_dialog_on_main_thread():
+    dispatched = []
+
+    class FakeTrayWithCorrect(FakeTray):
+        def _correct(self, item):
+            pass
+
+    tray = FakeTrayWithCorrect()
+    correction_hotkey = FakeHotkey()
+    app, _ = make_app(tray=tray, correction_hotkey=correction_hotkey,
+                      correction_dispatch=lambda fn, *a: dispatched.append(fn))
+    app.run()
+    assert correction_hotkey.started
+    assert correction_hotkey.press_cb == app._request_correction
+    app._request_correction()
+    assert dispatched == [tray._correct]
+
+
 def test_double_press_is_ignored_while_recording():
     app, p = make_app()
     app._on_hotkey_press()

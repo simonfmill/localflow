@@ -2,6 +2,9 @@ hotkey:
   # Push-to-talk combo. Most Mac keyboards never deliver a key-down event for
   # Fn to userspace listeners, so ordinary modifiers are the reliable default.
   combo: "cmd+alt"
+  # Opens the "correct last dictation" dialog (learns misrecognized words).
+  # Useful when the menubar icon is unavailable; empty string disables it.
+  correction_combo: "ctrl+alt+c"
 
 audio:
   samplerate: 16000

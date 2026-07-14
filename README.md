@@ -23,9 +23,10 @@ cursor in whatever app is focused. Nothing leaves your machine.
 - **Command Mode** — select text and speak an instruction ("make this more
   formal", "translate this to German"), or start any dictation with
   *"voice command …"*. The result replaces the selection.
-- **Personal dictionary** — terms are injected into the cleanup prompt so
-  proper nouns are spelled right; corrections you make after pasting can be
-  learned automatically (`observe_correction`).
+- **Personal dictionary** — terms bias Whisper's recognition (hotwords) and
+  protect spelling in cleanup. Press **Ctrl+Option+C** (or use the menubar's
+  *Correct last dictation…*) to fix the last pasted text; proper nouns from
+  your correction are learned automatically.
 - **Menubar tray** — recording indicator (🎙/🔴), enable/disable toggle,
   dictionary editor, quit.
 - **VAD auto-stop** — recording ends automatically after ~0.9 s of silence.
