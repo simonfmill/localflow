@@ -1,0 +1,74 @@
+LOCALFLOW — DIKTIEREN PER TASTENDRUCK (100 % LOKAL)
+====================================================
+
+Was es macht: Taste gedrückt halten, sprechen, loslassen — und der
+gesprochene Text erscheint dort, wo gerade dein Cursor ist. In jeder App.
+Alles läuft auf deinem Mac, nichts wird ins Internet geschickt.
+
+Voraussetzung: Ein Mac mit Apple-Chip (M1/M2/M3/M4), ~4 GB freier Speicher.
+
+
+INSTALLATION (einmalig, ca. 10 Minuten)
+----------------------------------------
+
+1) Diesen Ordner an einen dauerhaften Ort legen (z. B. in deinen
+   Benutzerordner). Er muss dort liegen bleiben.
+
+2) RECHTSKLICK auf "Install.command" → "Öffnen" → im Dialog nochmal
+   "Öffnen" klicken. (Der Rechtsklick-Umweg ist nur beim ersten Mal
+   nötig, weil die Datei aus dem Internet kommt.)
+   Ein Terminal-Fenster öffnet sich und installiert alles automatisch.
+   Kein Admin-Passwort nötig. Warten bis "✅ Installed" erscheint.
+
+3) BERECHTIGUNGEN erteilen — ohne die geht nichts:
+   Systemeinstellungen → Datenschutz & Sicherheit →
+     • Mikrofon            → Terminal einschalten
+     • Bedienungshilfen    → Terminal einschalten
+     • Eingabeüberwachung  → Terminal einschalten
+   (Terminal danach einmal komplett beenden und neu öffnen.)
+   Hinweis: "Mikrofon" hat kein Plus-Zeichen — Terminal taucht dort
+   automatisch auf, sobald macOS beim ersten Diktat nachfragt → "Erlauben".
+
+4) "Start.command" doppelklicken (auch hier ggf. erst per Rechtsklick →
+   Öffnen). Der ERSTE Start lädt das Spracherkennungsmodell herunter
+   (~1,6 GB) — das dauert ein paar Minuten, nur dieses eine Mal.
+
+
+BENUTZUNG
+----------
+
+DIKTIEREN:   cmd ⌘ + option ⌥ GEDRÜCKT HALTEN, sprechen (beliebig lange,
+             Deutsch oder Englisch), Tasten loslassen.
+             Nach ca. 2 Sekunden steht der Text an deinem Cursor.
+             Unten am Bildschirm zeigt eine kleine Welle, dass er zuhört.
+
+NAMEN BEIBRINGEN: Wird ein Name/Fachwort falsch verstanden:
+             ctrl ⌃ + shift ⇧ + C drücken → dein letzter Text öffnet
+             sich in TextEdit → Wort korrigieren → mit cmd+S speichern →
+             Fenster schließen. Ab dann wird das Wort richtig erkannt.
+
+BEENDEN:     Das Terminal-Fenster schließen, das beim Start aufging.
+
+AUTOSTART:   Systemeinstellungen → Allgemein → Anmeldeobjekte →
+             "Start.command" hinzufügen. Dann läuft LocalFlow nach jedem
+             Anmelden automatisch (das Terminal-Fenster einfach minimieren).
+
+
+WENN ETWAS NICHT KLAPPT
+------------------------
+
+• Beim Tastendrücken passiert nichts:
+  → Berechtigungen aus Schritt 3 prüfen, Terminal neu starten.
+  → Ein anderes Tool belegt evtl. die Tastenkombination. Andere Kombi
+    wählen: Datei ~/.config/localflow/config.yaml anlegen mit z. B.:
+        hotkey:
+          combo: "ctrl+alt"
+
+• Es wird aufgenommen (Welle sichtbar), aber nichts eingefügt:
+  → "Bedienungshilfen"-Berechtigung fehlt (Schritt 3).
+
+• Was gerade passiert, steht immer im Terminal-Fenster —
+  und in der Log-Datei: ~/Library/Logs/LocalFlow.log
+
+Mehr Details (englisch): README.md — u. a. optionale KI-Nachbearbeitung
+(Listen-/E-Mail-Formatierung per Ollama) und alle Einstellungen.
