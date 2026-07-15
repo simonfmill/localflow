@@ -257,7 +257,8 @@ def build_default(cfg: dict) -> LocalFlowApp:
     keep_alive = ollama_cfg.get("keep_alive", "30m")
     cleaner = OllamaCleaner(base_url=ollama_cfg["base_url"], model=ollama_cfg["model"],
                             fallback_model=ollama_cfg["fallback_model"],
-                            timeout_s=ollama_cfg["timeout_s"], keep_alive=keep_alive)
+                            timeout_s=ollama_cfg["timeout_s"], keep_alive=keep_alive,
+                            mode=cfg.get("cleanup", {}).get("mode", "full"))
     commander = CommandRunner(base_url=ollama_cfg["base_url"], model=ollama_cfg["model"],
                               fallback_model=ollama_cfg["fallback_model"],
                               timeout_s=ollama_cfg["timeout_s"], keep_alive=keep_alive)

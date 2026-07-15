@@ -43,6 +43,13 @@ ollama:
 dictionary:
   path: "~/.config/localflow/dictionary.json"
 
+cleanup:
+  # "full": remove fillers, apply self-corrections, format spoken lists,
+  #         adapt tone per app. "light": only remove fillers and add
+  #         punctuation/capitalization — everything else stays verbatim.
+  #         Use "light" if the model rewrites your speech too aggressively.
+  mode: "full"
+
 overlay:
   # Floating waveform pill shown while recording (Wispr-style).
   enabled: true

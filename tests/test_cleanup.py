@@ -2,7 +2,13 @@ import os
 
 import pytest
 
-from localflow.cleanup import SYSTEM_PROMPT, OllamaCleaner, is_faithful
+from localflow.cleanup import (
+    LIGHT_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    OllamaCleaner,
+    is_faithful,
+    keeps_enough_words,
+)
 from localflow.contracts import CleanupRequest, CleanupResult
 
 from conftest import FakeOllamaSession
@@ -47,6 +53,37 @@ def test_is_faithful_rejects_answers():
         "The capital of France is Paris, which has been the country's "
         "political and cultural center for many centuries.")
     assert not is_faithful("hello", "")
+
+
+def test_light_mode_uses_minimal_prompt_without_profile():
+    cleaner = OllamaCleaner(session=FakeOllamaSession(), mode="light")
+    messages = cleaner.build_messages(req())
+    system = messages[0]["content"]
+    assert LIGHT_SYSTEM_PROMPT in system
+    assert "Formatting profile" not in system
+    assert "Qwen, Sarah" in system  # dictionary still protected
+
+
+def test_full_mode_is_default_and_keeps_profile():
+    cleaner = OllamaCleaner(session=FakeOllamaSession(), mode="nonsense")
+    assert cleaner.mode == "full"
+    assert SYSTEM_PROMPT in cleaner.build_messages(req())[0]["content"]
+
+
+def test_keeps_enough_words():
+    raw = "ähm ich denke dass wir das morgen nochmal besprechen sollten"
+    assert keeps_enough_words(raw, "Ich denke, dass wir das morgen nochmal "
+                                   "besprechen sollten.")
+    # over-eager rewrite that drops half the clause
+    assert not keeps_enough_words(raw, "Wir besprechen das morgen.")
+
+
+def test_light_mode_rejects_over_shortened_output():
+    session = FakeOllamaSession(content="Wir besprechen das morgen.")
+    cleaner = OllamaCleaner(session=session, mode="light")
+    raw = "ähm ich denke dass wir das morgen nochmal besprechen sollten weil es wichtig ist"
+    result = cleaner.clean(req(raw_text=raw))
+    assert result.text == raw  # kept the raw transcript instead
 
 
 def test_clean_falls_back_to_raw_when_model_answers():
