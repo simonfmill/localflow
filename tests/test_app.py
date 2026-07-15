@@ -71,6 +71,7 @@ class FakeHotkey:
     def __init__(self):
         self.press_cb = None
         self.release_cb = None
+        self.chords = []
         self.started = False
 
     def on_press(self, cb):
@@ -78,6 +79,9 @@ class FakeHotkey:
 
     def on_release(self, cb):
         self.release_cb = cb
+
+    def add_chord(self, combo, callback):
+        self.chords.append((combo, callback))
 
     def start(self):
         self.started = True
@@ -256,7 +260,7 @@ def test_run_wires_hotkey_and_tray():
     assert p["tray"].ran
 
 
-def test_correction_hotkey_opens_tray_dialog_on_main_thread():
+def test_correction_chord_shares_the_single_hotkey_listener():
     dispatched = []
 
     class FakeTrayWithCorrect(FakeTray):
@@ -264,14 +268,19 @@ def test_correction_hotkey_opens_tray_dialog_on_main_thread():
             pass
 
     tray = FakeTrayWithCorrect()
-    correction_hotkey = FakeHotkey()
-    app, _ = make_app(tray=tray, correction_hotkey=correction_hotkey,
+    app, p = make_app(tray=tray, correction_combo="ctrl+alt+c",
                       correction_dispatch=lambda fn, *a: dispatched.append(fn))
     app.run()
-    assert correction_hotkey.started
-    assert correction_hotkey.press_cb == app._request_correction
+    hk = p["hotkey"]
+    assert hk.chords == [("ctrl+alt+c", app._request_correction)]
     app._request_correction()
     assert dispatched == [tray._correct]
+
+
+def test_no_correction_combo_registers_no_chord():
+    app, p = make_app()
+    app.run()
+    assert p["hotkey"].chords == []
 
 
 def test_double_press_is_ignored_while_recording():

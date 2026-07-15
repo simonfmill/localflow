@@ -19,7 +19,7 @@ PROCESSING = "processing"
 class LocalFlowApp:
     def __init__(self, *, recorder, asr, cleaner, commander, injector,
                  context_provider, dictionary, hotkey, tray=None, vad=None,
-                 overlay=None, correction_hotkey=None, correction_dispatch=None,
+                 overlay=None, correction_combo=None, correction_dispatch=None,
                  selection_provider=None, min_duration_s=0.3,
                  samplerate=16000, threaded=True):
         self.recorder = recorder
@@ -33,7 +33,7 @@ class LocalFlowApp:
         self.tray = tray
         self.vad = vad
         self.overlay = overlay
-        self.correction_hotkey = correction_hotkey
+        self.correction_combo = correction_combo
         self._correction_dispatch = correction_dispatch or self._main_thread_dispatch
         self.selection_provider = selection_provider
         self.min_duration_s = min_duration_s
@@ -178,10 +178,11 @@ class LocalFlowApp:
         log.info("microphone stream open")
         self.hotkey.on_press(self._on_hotkey_press)
         self.hotkey.on_release(self._on_hotkey_release)
+        if self.correction_combo and hasattr(self.hotkey, "add_chord"):
+            # Same listener as push-to-talk: a second keyboard event tap
+            # in one process aborts on macOS.
+            self.hotkey.add_chord(self.correction_combo, self._request_correction)
         self.hotkey.start()
-        if self.correction_hotkey is not None:
-            self.correction_hotkey.on_press(self._request_correction)
-            self.correction_hotkey.start()
         log.info("hotkey listener started — waiting for push-to-talk")
         if self.tray is not None:
             self.tray.run()
@@ -234,12 +235,10 @@ def build_default(cfg: dict) -> LocalFlowApp:
     overlay = None
     if overlay_cfg.get("enabled", True):
         overlay = RecordingOverlay(position=overlay_cfg.get("position", "bottom-center"))
-    correction_combo = cfg["hotkey"].get("correction_combo", "ctrl+alt+c")
-    correction_hotkey = PushToTalkListener(combo=correction_combo) if correction_combo else None
     app = LocalFlowApp(recorder=recorder, asr=asr, cleaner=cleaner, commander=commander,
                        injector=injector, context_provider=detect, dictionary=dictionary,
                        hotkey=hotkey, tray=None, vad=vad, overlay=overlay,
-                       correction_hotkey=correction_hotkey,
+                       correction_combo=cfg["hotkey"].get("correction_combo", "ctrl+alt+c"),
                        min_duration_s=cfg["pipeline"]["min_duration_s"],
                        samplerate=audio_cfg["samplerate"])
 

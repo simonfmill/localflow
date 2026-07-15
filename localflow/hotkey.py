@@ -36,8 +36,16 @@ def _token_for(key) -> str | None:
 
 
 class PushToTalkListener:
+    """One global listener: a push-to-talk combo plus optional extra chords.
+
+    macOS aborts when a process installs several keyboard event taps, so all
+    hotkeys must share this single pynput listener (see add_chord).
+    """
+
     def __init__(self, combo="fn+ctrl", listener_factory=None):
         self._required = {t.strip().lower() for t in combo.split("+") if t.strip()}
+        self._watched = set(self._required)
+        self._chords: list = []
         self._pressed: set = set()
         self._active = False
         self._press_cb = None
@@ -57,25 +65,39 @@ class PushToTalkListener:
     def on_release(self, cb):
         self._release_cb = cb
 
+    def add_chord(self, combo, callback):
+        """Fire `callback` once whenever `combo` is fully pressed."""
+        required = {t.strip().lower() for t in combo.split("+") if t.strip()}
+        if required:
+            self._chords.append({"required": required, "cb": callback, "active": False})
+            self._watched |= required
+
     def _handle_press(self, key):
         token = _token_for(key)
-        if token not in self._required:
+        if token not in self._watched:
             return
         self._pressed.add(token)
-        if self._pressed >= self._required and not self._active:
+        if self._required <= self._pressed and not self._active:
             self._active = True
             if self._press_cb:
                 self._press_cb()
+        for chord in self._chords:
+            if chord["required"] <= self._pressed and not chord["active"]:
+                chord["active"] = True
+                chord["cb"]()
 
     def _handle_release(self, key):
         token = _token_for(key)
-        if token not in self._required:
+        if token not in self._watched:
             return
         self._pressed.discard(token)
-        if self._active:
+        if self._active and token in self._required:
             self._active = False
             if self._release_cb:
                 self._release_cb()
+        for chord in self._chords:
+            if chord["active"] and token in chord["required"]:
+                chord["active"] = False
 
     def start(self):
         if self._listener is None:
