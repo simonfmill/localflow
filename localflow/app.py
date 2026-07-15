@@ -19,7 +19,7 @@ PROCESSING = "processing"
 class LocalFlowApp:
     def __init__(self, *, recorder, asr, cleaner, commander, injector,
                  context_provider, dictionary, hotkey, tray=None, vad=None,
-                 overlay=None, correction_combo=None, correction_dispatch=None,
+                 overlay=None, correction_combo=None, editor_opener=None,
                  selection_provider=None, min_duration_s=0.3,
                  samplerate=16000, threaded=True):
         self.recorder = recorder
@@ -34,7 +34,7 @@ class LocalFlowApp:
         self.vad = vad
         self.overlay = overlay
         self.correction_combo = correction_combo
-        self._correction_dispatch = correction_dispatch or self._main_thread_dispatch
+        self._editor_opener = editor_opener or self._default_editor_opener
         self.selection_provider = selection_provider
         self.min_duration_s = min_duration_s
         self.samplerate = samplerate
@@ -45,16 +45,49 @@ class LocalFlowApp:
         self.recorder.block_listeners.append(self._on_block)
 
     @staticmethod
-    def _main_thread_dispatch(fn, *args):
-        from PyObjCTools import AppHelper
+    def _default_editor_opener(path):
+        import subprocess
 
-        AppHelper.callAfter(fn, *args)
+        subprocess.Popen(["open", "-t", path])
 
     def _request_correction(self):
-        """Hotkey handler: open the correction dialog on the main thread."""
-        log.info("correction hotkey pressed — opening dialog")
-        if self.tray is not None:
-            self._correction_dispatch(self.tray._correct, None)
+        """Hotkey handler: open the last dictation in a text editor to learn fixes.
+
+        Uses a plain file + default editor because on some macOS installs this
+        unbundled process cannot display its own dialogs or status items.
+        """
+        last = self.last_pasted
+        if not last:
+            log.info("correction requested but nothing has been dictated yet")
+            return
+        log.info("correction hotkey pressed — opening editor")
+        threading.Thread(target=self._correction_file_flow, args=(last,),
+                         daemon=True).start()
+
+    def _correction_file_flow(self, last, poll_interval=1.0, timeout_s=180):
+        import tempfile
+        from pathlib import Path
+
+        path = Path(tempfile.gettempdir()) / "localflow-correction.txt"
+        try:
+            path.write_text(last)
+            self._editor_opener(str(path))
+        except Exception:
+            log.exception("could not open the correction editor")
+            return
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            time.sleep(poll_interval)
+            try:
+                current = path.read_text().strip()
+            except OSError:
+                continue
+            if current and current != last.strip():
+                added = self.dictionary.observe_correction(last, current)
+                log.info("dictionary learned: %s",
+                         ", ".join(added) if added else "nothing new")
+                return
+        log.info("correction editor closed without changes (timed out)")
 
     @property
     def state(self) -> str:

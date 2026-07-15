@@ -64,7 +64,13 @@ class FakeInjector:
 
 
 class FakeDictionary:
-    terms = ["Qwen"]
+    def __init__(self):
+        self.terms = ["Qwen"]
+        self.corrections = []
+
+    def observe_correction(self, old, new):
+        self.corrections.append((old, new))
+        return ["Sarah"]
 
 
 class FakeHotkey:
@@ -261,20 +267,42 @@ def test_run_wires_hotkey_and_tray():
 
 
 def test_correction_chord_shares_the_single_hotkey_listener():
-    dispatched = []
-
-    class FakeTrayWithCorrect(FakeTray):
-        def _correct(self, item):
-            pass
-
-    tray = FakeTrayWithCorrect()
-    app, p = make_app(tray=tray, correction_combo="ctrl+alt+c",
-                      correction_dispatch=lambda fn, *a: dispatched.append(fn))
+    app, p = make_app(correction_combo="ctrl+shift+c")
     app.run()
-    hk = p["hotkey"]
-    assert hk.chords == [("ctrl+alt+c", app._request_correction)]
+    assert p["hotkey"].chords == [("ctrl+shift+c", app._request_correction)]
+
+
+def test_correction_file_flow_learns_from_saved_edit(tmp_path, monkeypatch):
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+
+    def edit_file(path):
+        from pathlib import Path
+
+        assert Path(path).read_text() == "meet with sara"
+        Path(path).write_text("meet with Sarah")
+
+    app, p = make_app(editor_opener=edit_file)
+    app.last_pasted = "meet with sara"
+    app._correction_file_flow("meet with sara", poll_interval=0.01, timeout_s=2)
+    assert p["dictionary"].corrections == [("meet with sara", "meet with Sarah")]
+
+
+def test_correction_file_flow_times_out_without_edit(tmp_path, monkeypatch):
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    app, p = make_app(editor_opener=lambda path: None)
+    app._correction_file_flow("unchanged text", poll_interval=0.01, timeout_s=0.05)
+    assert p["dictionary"].corrections == []
+
+
+def test_correction_without_dictation_is_noop():
+    opened = []
+    app, _ = make_app(editor_opener=opened.append)
     app._request_correction()
-    assert dispatched == [tray._correct]
+    assert opened == []
 
 
 def test_no_correction_combo_registers_no_chord():
