@@ -1,22 +1,12 @@
 #!/bin/zsh
 # LocalFlow installer — double-click me.
-# Sets up a private Python, installs LocalFlow, and pulls the cleanup model.
+# Sets up a private Python and installs LocalFlow with the fast GPU backend.
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "==> Installing LocalFlow into: $DIR"
 echo
 
-# 1. Ollama must be installed first (it serves the local cleanup LLM).
-if ! command -v ollama >/dev/null 2>&1 && [ ! -d /Applications/Ollama.app ]; then
-    echo "⚠️  Ollama is not installed yet."
-    echo "    1. Download it from https://ollama.com/download (opening now)"
-    echo "    2. Install and launch it once"
-    echo "    3. Double-click Install.command again"
-    open "https://ollama.com/download" 2>/dev/null || true
-    exit 1
-fi
-
-# 2. uv — a small user-local tool that provides Python 3.12 (no admin needed).
+# 1. uv — a small user-local tool that provides Python 3.12 (no admin needed).
 UV="$HOME/.local/bin/uv"
 if command -v uv >/dev/null 2>&1; then
     UV="$(command -v uv)"
@@ -25,18 +15,31 @@ elif [ ! -x "$UV" ]; then
     curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 
-# 3. Python environment + LocalFlow and its dependencies.
+# 2. Python environment + LocalFlow. On Apple Silicon, include the MLX
+#    GPU backend (much faster and more accurate transcription).
 echo "==> Setting up Python 3.12 environment…"
 "$UV" venv --clear --python 3.12 "$DIR/.venv"
 echo "==> Installing LocalFlow (this takes a few minutes)…"
-"$UV" pip install --python "$DIR/.venv/bin/python" -e "$DIR"
-
-# 4. The cleanup model (one-time, ~4.7 GB; use qwen2.5:3b on 8 GB Macs).
-if command -v ollama >/dev/null 2>&1; then
-    echo "==> Downloading the cleanup model qwen2.5:7b (~4.7 GB, one time)…"
-    ollama pull qwen2.5:7b || echo "    (skipped — run 'ollama pull qwen2.5:7b' later)"
+if [ "$(uname -m)" = "arm64" ]; then
+    "$UV" pip install --python "$DIR/.venv/bin/python" -e "$DIR[mlx]"
 else
-    echo "⚠️  Launch the Ollama app once, then run: ollama pull qwen2.5:7b"
+    echo "    (Intel Mac detected — using the CPU transcription backend.)"
+    "$UV" pip install --python "$DIR/.venv/bin/python" -e "$DIR"
+    mkdir -p "$HOME/.config/localflow"
+    if [ ! -f "$HOME/.config/localflow/config.yaml" ]; then
+        printf 'whisper:\n  backend: "ctranslate2"\n  model: "small"\n' \
+            > "$HOME/.config/localflow/config.yaml"
+    fi
+fi
+
+# 3. Optional: Ollama powers the LLM extras (cleanup modes, Command Mode).
+#    The default setup pastes Whisper's transcript directly and does not
+#    need it.
+if ! command -v ollama >/dev/null 2>&1 && [ ! -d /Applications/Ollama.app ]; then
+    echo
+    echo "ℹ️  Ollama not found — that's fine for the default setup."
+    echo "   If you later want LLM cleanup or Command Mode: install it from"
+    echo "   https://ollama.com/download and run: ollama pull qwen2.5:7b"
 fi
 
 echo
@@ -47,5 +50,6 @@ echo "     • Microphone   • Accessibility   • Input Monitoring"
 echo "   (macOS will prompt for the microphone on first recording.)"
 echo
 echo "2. START — double-click Start.command in this folder."
-echo "   Hold Cmd+Option, speak, release → cleaned text pastes at your cursor."
-echo "   (First start downloads the speech model, ~460 MB, one time.)"
+echo "   The FIRST start downloads the transcription model (~1.6 GB, one time)."
+echo "   Then: hold Cmd+Option, speak, release → your words paste at the cursor."
+echo "   Fix a misheard name: press Ctrl+Shift+C, edit, save with Cmd+S."

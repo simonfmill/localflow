@@ -1,140 +1,106 @@
 # LocalFlow
 
-A fully-local macOS clone of [Wispr Flow](https://wisprflow.ai): hold a global
-hotkey, speak, release — and cleaned-up, punctuated text is pasted at the
-cursor in whatever app is focused. Nothing leaves your machine.
+A fully-local macOS dictation app in the spirit of [Wispr Flow](https://wisprflow.ai):
+hold a hotkey, speak, release — and your words are pasted at the cursor in
+whatever app is focused. Nothing leaves your machine.
 
-- **Speech recognition:** [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
-  (`small.en`, int8) on-device.
-- **Cleanup brain:** a local LLM served by [Ollama](https://ollama.com)
-  (`qwen2.5:7b`, falls back to `qwen2.5:3b`). Ollama only cleans/formats — it
-  does not transcribe.
-- **Injection:** clipboard swap + `Cmd+V` into the frontmost app, with the
-  previous clipboard restored.
+The default setup is tuned for **speed and accuracy**: OpenAI's
+`whisper-large-v3-turbo` running on the Apple GPU via
+[mlx-whisper](https://github.com/ml-explore/mlx-examples) transcribes a
+dictation of any length in **~2 seconds** flat, with punctuation and
+capitalization built in, and pastes the transcript directly. Optional LLM
+post-processing via [Ollama](https://ollama.com) is available for formatting
+magic (see *Cleanup modes*).
 
-## Features
+## Quick install (Apple Silicon Mac)
 
-- **Push-to-talk dictation** — hold `Cmd+Option`, speak, release.
-- **Cleanup magic** — removes fillers (um/uh), false starts, applies
-  punctuation/capitalization, honors "scratch that" self-corrections, turns
-  spoken enumerations into numbered lists.
-- **Per-app formatting profiles** — casual for Slack/Discord, polished for
-  email, verbatim (no reflow, no auto-caps) for terminals and code editors.
-- **Command Mode** — select text and speak an instruction ("make this more
-  formal", "translate this to German"), or start any dictation with
-  *"voice command …"*. The result replaces the selection.
-- **Personal dictionary** — terms bias Whisper's recognition (hotwords) and
-  protect spelling in cleanup. Press **Ctrl+Option+C** (or use the menubar's
-  *Correct last dictation…*) to fix the last pasted text; proper nouns from
-  your correction are learned automatically.
-- **Menubar tray** — recording indicator (🎙/🔴), enable/disable toggle,
-  dictionary editor, quit.
-- **VAD auto-stop** — recording ends automatically after ~0.9 s of silence.
+1. **Download:** green **Code** button → *Download ZIP* → unzip (keep the
+   folder wherever you want it to live).
+2. **Install:** right-click `Install.command` → *Open* → *Open*
+   (first time only — the file is unsigned). It installs a private
+   Python and all dependencies; no admin password needed.
+3. **Permissions:** System Settings → Privacy & Security → grant **Terminal**:
+   *Microphone*, *Accessibility*, and *Input Monitoring*.
+4. **Start:** double-click `Start.command`. The first start downloads the
+   transcription model (~1.6 GB, one time).
 
-## Install
-
-Requires macOS and Python 3.11+ ([uv](https://docs.astral.sh/uv/) is the
-easiest way to get one: `uv venv --python 3.12 .venv`).
-
-```bash
-# 1. The cleanup model
-ollama pull qwen2.5:7b        # or qwen2.5:3b on smaller machines
-ollama serve                  # if not already running
-
-# 2. LocalFlow
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .              # first run of the app downloads whisper small.en (~460 MB)
-```
-
-### macOS permissions (required)
-
-In **System Settings → Privacy & Security**, grant your terminal (or the app
-you launch LocalFlow from):
-
-- **Microphone** — to record speech.
-- **Accessibility** — to send the synthetic `Cmd+V` keystroke.
-- **Input Monitoring** — for the global hotkey listener.
+Intel Macs work too — the installer automatically falls back to the CPU
+backend with a smaller model.
 
 ## Usage
 
-```bash
-python -m localflow
-```
+- **Dictate:** hold **⌘ Cmd + ⌥ Option**, speak (as long as you like),
+  release. ~2 s later the text is pasted at your cursor. A small waveform
+  pill at the bottom of the screen shows that recording is live.
+- **Fix a misheard name:** press **⌃ Ctrl + ⇧ Shift + C** — your last
+  dictation opens in TextEdit. Correct it, hit **Cmd+S**, close. LocalFlow
+  learns the corrected names and recognizes them from then on.
+- **Command Mode** (requires Ollama): start a dictation with
+  *"voice command …"* to have an instruction executed instead of pasted,
+  e.g. *"voice command translate this to English"* with text selected.
+- **Quit:** press Ctrl+C in the Terminal window that `Start.command` opened
+  (or just close it).
 
-A 🎙 icon appears in the menubar. Hold **Cmd+Option**, speak, release. The
-icon turns 🔴 while recording. Roughly 1.5 s after release (models warm), the
-cleaned text is pasted at your cursor.
+Autostart at login: System Settings → General → *Login Items & Extensions* →
+add `Start.command` under *Open at Login*.
 
-> **Why not the Fn key like Wispr?** Many Mac keyboards never deliver a
-> key-*down* event for Fn to userspace listeners (only sporadic key-ups),
-> which makes Fn unusable for push-to-talk. Any combo of ordinary modifiers
-> works: set e.g. `hotkey.combo: "ctrl+alt"` in your user config.
-> `keytest.py` in the repo root logs 30 s of raw key events to diagnose what
-> your keyboard sends.
-
-### Configuration
+## Configuration
 
 Defaults live in `localflow/config.defaults.yaml`; override any subset in
-`~/.config/localflow/config.yaml`:
+`~/.config/localflow/config.yaml`. The interesting dials:
 
 ```yaml
 hotkey:
-  combo: "ctrl+alt"
-ollama:
-  model: "qwen2.5:3b"
-vad:
-  enabled: false
+  combo: "cmd+alt"              # push-to-talk keys
+  correction_combo: "ctrl+shift+c"
+whisper:
+  backend: "mlx"                # "mlx" (Apple GPU) or "ctranslate2" (CPU)
+  model: "large-v3-turbo"       # or "small" for lower RAM/disk use
+  language: "auto"              # pin to "de"/"en"/… to skip detection
+cleanup:
+  mode: "off"                   # see below
 ```
+
+### Cleanup modes (`cleanup.mode`)
+
+| Mode | What it does | Needs Ollama | Extra latency |
+|---|---|---|---|
+| `off` | paste Whisper's transcript directly (default) | no | none |
+| `light` | remove fillers, fix punctuation | yes | ~1–2 s |
+| `format` | verbatim words + numbered lists, email greeting/paragraph structure | yes | ~1–3 s |
+| `full` | fillers, self-corrections, spoken lists, per-app tone | yes | ~1–3 s |
+
+For the LLM modes: install [Ollama](https://ollama.com/download) and run
+`ollama pull qwen2.5:7b`.
 
 The personal dictionary is a JSON list at
-`~/.config/localflow/dictionary.json` (editable from the menubar).
+`~/.config/localflow/dictionary.json`; its terms are fed to Whisper as
+recognition hints and (in LLM modes) spelling rules.
 
-## Tests
+## Troubleshooting
 
-All external services and hardware (Ollama, microphone, keyboard,
-NSWorkspace, rumps) are mocked; tests run headless:
+- **Hotkey does nothing:** another tool may own the combo (e.g. Rectangle
+  uses many Ctrl+Option shortcuts — that's why correction defaults to
+  Ctrl+Shift+C). Pick any other modifier combo in the config. The Fn key
+  cannot be used: most Mac keyboards never deliver it to apps.
+- **Nothing pastes:** re-check the Accessibility grant for Terminal, then
+  fully quit and reopen Terminal.
+- **Logs:** the Terminal window shows per-dictation timings; a copy is
+  written to `~/Library/Logs/LocalFlow.log`.
+- `keytest.py` logs 30 s of raw key events to diagnose keyboard issues.
+
+## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest -v
-ruff check localflow tests
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python -e ".[dev,mlx]"
+.venv/bin/python -m pytest -v      # all external services/hardware mocked
+.venv/bin/ruff check localflow tests
 ```
 
-Tests that hit real services (whisper model download, live Ollama) are
-skipped unless `RUN_LIVE=1` is set.
-
-## Manual end-to-end checklist
-
-These need a microphone and the macOS permission grants above, so they cannot
-run in CI:
-
-1. `ollama pull qwen2.5:7b` and make sure `ollama serve` is running.
-2. `pip install -e .` (first run downloads the whisper `small.en` model).
-3. Grant **Microphone**, **Accessibility**, and **Input Monitoring** to your terminal.
-4. `python -m localflow` → the 🎙 menubar icon appears.
-5. Focus TextEdit; hold `Cmd+Option`, say *"hey team um lets ship this on
-   friday"*, release → **"Hey team, let's ship this on Friday."** is pasted.
-6. Command Mode: select a sentence, hold the hotkey, say *"voice command make
-   this more formal"* → the selection is rewritten formally.
-7. Dictionary: add a proper noun (menubar → *Edit dictionary…*) → it is
-   spelled correctly in the next dictation.
-8. Per-app: dictate into Terminal or VS Code → text arrives verbatim, without
-   chat-style punctuation or auto-capitalization.
-
-## Architecture
-
-```
-hotkey (push-to-talk, Fn+Ctrl)
-  └─> audio.Recorder (ring buffer, 500 ms pre-roll)
-        └─> vad.SilenceDetector (auto-stop)
-              └─> asr.WhisperEngine ──► Transcript
-                    └─> context.detect() + dictionary + profiles
-                          ├─> cleanup.OllamaCleaner        (dictation)
-                          ├─> command_mode.CommandRunner   (selection / "voice command")
-                          └─────► inject.ClipboardInjector (Cmd+V, clipboard restored)
-tray.LocalFlowTray: 🎙/🔴 state, toggle, dictionary, quit
-app.LocalFlowApp: session state machine wiring it all together
-```
-
-Every module codes against the dataclasses/protocols in
-`localflow/contracts.py` and is testable in isolation.
+Architecture: `hotkey → audio (ring buffer w/ pre-roll) → asr (MLX or
+faster-whisper) → [optional Ollama cleanup / command mode] → inject
+(clipboard + Cmd+V, restored)`. Every module codes against
+`localflow/contracts.py` and ships its own test file. An experimental
+chunked streaming mode exists (`pipeline.streaming`) for the CPU backend;
+with MLX it is unnecessary because per-pass cost is flat.

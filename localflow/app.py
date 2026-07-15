@@ -272,7 +272,14 @@ def build_default(cfg: dict) -> LocalFlowApp:
                               silence_ms=vad_cfg["silence_ms"],
                               min_speech_ms=vad_cfg["min_speech_ms"])
     whisper_cfg = cfg["whisper"]
-    if whisper_cfg.get("backend", "ctranslate2") == "mlx":
+    use_mlx = whisper_cfg.get("backend", "ctranslate2") == "mlx"
+    if use_mlx:
+        try:
+            import mlx_whisper  # noqa: F401 — availability check (Apple Silicon only)
+        except ImportError:
+            log.warning("mlx-whisper not installed — falling back to CPU backend")
+            use_mlx = False
+    if use_mlx:
         from localflow.asr import MlxWhisperEngine
 
         asr = MlxWhisperEngine(model_name=whisper_cfg["model"],

@@ -4,7 +4,7 @@ hotkey:
   combo: "cmd+alt"
   # Opens the "correct last dictation" dialog (learns misrecognized words).
   # Useful when the menubar icon is unavailable; empty string disables it.
-  correction_combo: "ctrl+alt+c"
+  correction_combo: "ctrl+shift+c"
 
 audio:
   samplerate: 16000
@@ -13,9 +13,9 @@ audio:
 
 vad:
   # Auto-stop after a run of silence. With push-to-talk the key release is
-  # the natural stop, so this is a safety net, not a cutoff — keep silence_ms
-  # generous or set enabled: false to record for as long as the key is held.
-  enabled: true
+  # the natural stop, so auto-stop is disabled by default — enable it if you
+  # want recording to end on its own after a long pause.
+  enabled: false
   energy_threshold: 0.01
   silence_ms: 2000
   min_speech_ms: 200
@@ -25,10 +25,10 @@ whisper:
   # "large-v3-turbo" (~1.6 GB, ~2.3x realtime) is dramatically more accurate,
   # especially for non-English speech — recommended with streaming enabled.
   # "small.en" is English-only.
-  model: "small"
+  model: "large-v3-turbo"
   # "ctranslate2" (faster-whisper, CPU) or "mlx" (Apple-GPU via mlx-whisper,
   # much faster on M-chips; pip install mlx-whisper).
-  backend: "ctranslate2"
+  backend: "mlx"
   device: "auto"
   compute_type: "int8"
   # Pin to "de", "en", … to skip the per-utterance language detection pass
@@ -57,7 +57,7 @@ cleanup:
   # "off":    no LLM pass at all — paste Whisper's transcript directly
   #           (fastest; large-v3-turbo already punctuates well).
   # Use "format"/"light"/"off" if the model rewrites your speech too much.
-  mode: "full"
+  mode: "off"
 
 overlay:
   # Floating waveform pill shown while recording (Wispr-style).
@@ -71,4 +71,4 @@ pipeline:
   min_duration_s: 0.3
   # Transcribe while you speak so long dictations paste almost immediately
   # after key release instead of waiting for a full transcription pass.
-  streaming: true
+  streaming: false

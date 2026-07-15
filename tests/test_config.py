@@ -4,12 +4,16 @@ from localflow.config import _deep_merge, load_config
 def test_defaults_load():
     cfg = load_config(user_path="/nonexistent/config.yaml")
     assert cfg["hotkey"]["combo"] == "cmd+alt"
-    assert cfg["whisper"]["model"] == "small"
+    assert cfg["hotkey"]["correction_combo"] == "ctrl+shift+c"
+    assert cfg["whisper"]["model"] == "large-v3-turbo"
+    assert cfg["whisper"]["backend"] == "mlx"
+    assert cfg["cleanup"]["mode"] == "off"
+    assert cfg["pipeline"]["streaming"] is False
     assert cfg["ollama"]["model"] == "qwen2.5:7b"
     assert cfg["ollama"]["fallback_model"] == "qwen2.5:3b"
     assert cfg["ollama"]["base_url"] == "http://localhost:11434"
     assert cfg["audio"]["preroll_ms"] == 500
-    assert cfg["vad"]["enabled"] is True
+    assert cfg["vad"]["enabled"] is False
 
 
 def test_user_override_merges_deeply(tmp_path):
