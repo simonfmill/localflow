@@ -21,8 +21,10 @@ vad:
   min_speech_ms: 200
 
 whisper:
-  # "small" is multilingual (auto-detects the spoken language);
-  # use "small.en" for slightly better English-only accuracy.
+  # "small" is multilingual and fast (~8x realtime on Apple Silicon).
+  # "large-v3-turbo" (~1.6 GB, ~2.3x realtime) is dramatically more accurate,
+  # especially for non-English speech — recommended with streaming enabled.
+  # "small.en" is English-only.
   model: "small"
   device: "auto"
   compute_type: "int8"

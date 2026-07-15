@@ -44,17 +44,21 @@ class WhisperEngine:
         """Force model download/load and prime caches with half a second of silence."""
         self.transcribe(np.zeros(int(0.5 * 16000), dtype=np.float32))
 
-    def transcribe(self, wav, hotwords=None) -> Transcript:
+    def transcribe(self, wav, hotwords=None, initial_prompt=None) -> Transcript:
         """Transcribe 16 kHz mono audio (float32 ndarray or WAV bytes).
 
         hotwords: personal-dictionary terms biased during decoding, so names
         and jargon are recognized instead of being fixed after the fact.
+        initial_prompt: preceding text for context — used by streaming so
+        words at chunk boundaries are decoded with the sentence so far.
         """
         audio = self._to_audio(wav)
         kwargs = dict(beam_size=1, language=self.language,
                       condition_on_previous_text=False)
         if hotwords:
             kwargs["hotwords"] = hotwords
+        if initial_prompt:
+            kwargs["initial_prompt"] = initial_prompt
         try:
             segments, info = self.load().transcribe(audio, **kwargs)
         except TypeError:  # faster-whisper too old for hotwords

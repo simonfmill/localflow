@@ -75,7 +75,8 @@ class StreamingTranscriber:
                 audio = self._buffer.copy()
             if audio.size < self.samplerate:  # < 1 s — not worth a pass yet
                 return
-            transcript = self.engine.transcribe(audio, hotwords=self._hotwords)
+            transcript = self.engine.transcribe(audio, hotwords=self._hotwords,
+                                                initial_prompt=self._context())
             cutoff = audio.size / self.samplerate - self.tail_s
             texts = []
             commit_end = 0.0
@@ -109,7 +110,16 @@ class StreamingTranscriber:
             parts = list(self._committed)
             self._committed = []
         if audio.size >= int(0.2 * self.samplerate):
-            tail = self.engine.transcribe(audio, hotwords=self._hotwords).text.strip()
+            context = " ".join(parts)[-200:] if parts else None
+            tail = self.engine.transcribe(audio, hotwords=self._hotwords,
+                                          initial_prompt=context).text.strip()
             if tail:
                 parts.append(tail)
         return " ".join(p for p in parts if p).strip()
+
+    def _context(self):
+        """Last ~200 chars of committed text — decoding context across cuts."""
+        with self._lock:
+            if not self._committed:
+                return None
+            return " ".join(self._committed)[-200:]

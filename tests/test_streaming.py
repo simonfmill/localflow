@@ -12,8 +12,9 @@ class FakeEngine:
     def __init__(self):
         self.calls = []
 
-    def transcribe(self, audio, hotwords=None):
-        self.calls.append({"seconds": len(audio) / SR, "hotwords": hotwords})
+    def transcribe(self, audio, hotwords=None, initial_prompt=None):
+        self.calls.append({"seconds": len(audio) / SR, "hotwords": hotwords,
+                           "initial_prompt": initial_prompt})
         n = int(len(audio) // SR)
         segments = [{"start": float(i), "end": float(i + 1), "text": f"seg{i}"}
                     for i in range(n)]
@@ -70,6 +71,19 @@ def test_tiny_tail_is_not_transcribed():
     st.feed(seconds(0.1))
     assert st.finish() == ""
     assert engine.calls == []
+
+
+def test_committed_text_becomes_context_for_next_passes():
+    st, engine = make()
+    st.start()
+    st.feed(seconds(5))
+    st.process_pending()
+    assert engine.calls[0]["initial_prompt"] is None  # nothing committed yet
+    st.feed(seconds(4))
+    st.process_pending()
+    assert engine.calls[1]["initial_prompt"] == "seg0 seg1 seg2"
+    st.finish()
+    assert engine.calls[-1]["initial_prompt"]  # tail pass gets context too
 
 
 def test_total_seconds_track_fed_audio():
