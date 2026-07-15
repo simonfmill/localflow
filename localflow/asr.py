@@ -82,3 +82,39 @@ class WhisperEngine:
                 data = data[:, 0]
             return np.ascontiguousarray(data, dtype=np.float32)
         return np.asarray(wav, dtype=np.float32).reshape(-1)
+
+
+class MlxWhisperEngine:
+    """Apple-GPU backend via mlx-whisper — much faster than CPU on M-chips.
+
+    Same interface as WhisperEngine. Hotwords are emulated through the
+    initial prompt (mlx-whisper has no dedicated hotwords parameter).
+    """
+
+    def __init__(self, model_name="large-v3-turbo", language=None, transcribe_fn=None):
+        self.repo = (model_name if "/" in model_name
+                     else f"mlx-community/whisper-{model_name}")
+        self.language = None if language in (None, "", "auto") else language
+        self._transcribe_fn = transcribe_fn
+
+    def _fn(self):
+        if self._transcribe_fn is None:
+            import mlx_whisper
+
+            self._transcribe_fn = mlx_whisper.transcribe
+        return self._transcribe_fn
+
+    def warmup(self):
+        self.transcribe(np.zeros(int(0.5 * 16000), dtype=np.float32))
+
+    def transcribe(self, wav, hotwords=None, initial_prompt=None) -> Transcript:
+        audio = WhisperEngine._to_audio(wav)
+        prompt = initial_prompt or hotwords or None
+        result = self._fn()(audio, path_or_hf_repo=self.repo,
+                            language=self.language, initial_prompt=prompt,
+                            condition_on_previous_text=False, verbose=None)
+        segments = [{"start": s.get("start"), "end": s.get("end"),
+                     "text": s.get("text", "")} for s in result.get("segments", [])]
+        return Transcript(text=(result.get("text") or "").strip(), segments=segments,
+                          lang=result.get("language") or "en",
+                          duration_s=audio.size / 16000)

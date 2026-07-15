@@ -29,6 +29,9 @@ dependencies = [
 dev = ["pytest>=8", "pytest-mock>=3.12", "ruff>=0.4"]
 # ten-vad is optional; localflow.vad falls back to an energy threshold when absent.
 vad = ["ten-vad"]
+# Apple-GPU transcription backend (whisper.backend: "mlx") — much faster
+# than CPU on M-series Macs.
+mlx = ["mlx-whisper"]
 
 [project.scripts]
 localflow = "localflow.__main__:main"

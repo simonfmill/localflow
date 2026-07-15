@@ -26,6 +26,9 @@ whisper:
   # especially for non-English speech — recommended with streaming enabled.
   # "small.en" is English-only.
   model: "small"
+  # "ctranslate2" (faster-whisper, CPU) or "mlx" (Apple-GPU via mlx-whisper,
+  # much faster on M-chips; pip install mlx-whisper).
+  backend: "ctranslate2"
   device: "auto"
   compute_type: "int8"
   # Pin to "de", "en", … to skip the per-utterance language detection pass
@@ -51,7 +54,9 @@ cleanup:
   # "format": keep every word verbatim, but add structure — numbered lists,
   #           email greeting/sign-off lines, paragraph breaks.
   # "light":  only remove fillers and add punctuation/capitalization.
-  # Use "format" or "light" if the model rewrites your speech too much.
+  # "off":    no LLM pass at all — paste Whisper's transcript directly
+  #           (fastest; large-v3-turbo already punctuates well).
+  # Use "format"/"light"/"off" if the model rewrites your speech too much.
   mode: "full"
 
 overlay:

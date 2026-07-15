@@ -202,6 +202,8 @@ class LocalFlowApp:
                 CommandRequest(instruction=command_mode.strip_trigger(text),
                                selection=selection)
             )
+        elif self.cleaner is None:  # cleanup off: paste the transcript as-is
+            result = text
         else:
             req = CleanupRequest(
                 raw_text=text,
@@ -270,16 +272,25 @@ def build_default(cfg: dict) -> LocalFlowApp:
                               silence_ms=vad_cfg["silence_ms"],
                               min_speech_ms=vad_cfg["min_speech_ms"])
     whisper_cfg = cfg["whisper"]
-    asr = WhisperEngine(model_name=whisper_cfg["model"], device=whisper_cfg["device"],
-                        compute_type=whisper_cfg["compute_type"],
-                        language=whisper_cfg.get("language", "auto"),
-                        cpu_threads=whisper_cfg.get("cpu_threads", 8))
+    if whisper_cfg.get("backend", "ctranslate2") == "mlx":
+        from localflow.asr import MlxWhisperEngine
+
+        asr = MlxWhisperEngine(model_name=whisper_cfg["model"],
+                               language=whisper_cfg.get("language", "auto"))
+    else:
+        asr = WhisperEngine(model_name=whisper_cfg["model"], device=whisper_cfg["device"],
+                            compute_type=whisper_cfg["compute_type"],
+                            language=whisper_cfg.get("language", "auto"),
+                            cpu_threads=whisper_cfg.get("cpu_threads", 8))
     ollama_cfg = cfg["ollama"]
     keep_alive = ollama_cfg.get("keep_alive", "30m")
-    cleaner = OllamaCleaner(base_url=ollama_cfg["base_url"], model=ollama_cfg["model"],
-                            fallback_model=ollama_cfg["fallback_model"],
-                            timeout_s=ollama_cfg["timeout_s"], keep_alive=keep_alive,
-                            mode=cfg.get("cleanup", {}).get("mode", "full"))
+    cleanup_mode = cfg.get("cleanup", {}).get("mode", "full")
+    cleaner = None
+    if cleanup_mode != "off":
+        cleaner = OllamaCleaner(base_url=ollama_cfg["base_url"], model=ollama_cfg["model"],
+                                fallback_model=ollama_cfg["fallback_model"],
+                                timeout_s=ollama_cfg["timeout_s"], keep_alive=keep_alive,
+                                mode=cleanup_mode)
     commander = CommandRunner(base_url=ollama_cfg["base_url"], model=ollama_cfg["model"],
                               fallback_model=ollama_cfg["fallback_model"],
                               timeout_s=ollama_cfg["timeout_s"], keep_alive=keep_alive)

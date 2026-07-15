@@ -26,43 +26,69 @@ def seconds(n):
     return np.zeros(int(n * SR), dtype=np.float32)
 
 
-def make(chunk_s=3.0, tail_s=1.5):
+def make(chunk_s=2.0, tail_s=1.0):
     engine = FakeEngine()
     st = StreamingTranscriber(engine, samplerate=SR, chunk_s=chunk_s, tail_s=tail_s)
     return st, engine
 
 
-def test_commits_stable_prefix_and_keeps_tail():
-    st, engine = make(tail_s=1.5)
+def test_commits_one_bounded_chunk():
+    st, engine = make()  # threshold = 3.0 s
     st.start(hotwords="Qwen")
-    st.feed(seconds(5))
+    st.feed(seconds(4))
     st.process_pending()
-    # 5 s buffer, cutoff 3.5 s → segments ending at 1,2,3 are committed
-    assert st._committed == ["seg0 seg1 seg2"]
-    assert st._buffer.size == 2 * SR  # 3 s of audio dropped
+    assert len(st._committed) == 1
+    assert st._committed[0].startswith("seg0")
+    # cut lands within chunk_s ± 0.6 s → 1.4–2.6 s of audio removed
+    assert 1.4 * SR <= st._buffer.size <= 2.6 * SR
     assert engine.calls[0]["hotwords"] == "Qwen"
+    assert engine.calls[0]["seconds"] <= 2.6  # bounded work per pass
+    st.finish()
+
+
+def test_below_threshold_does_not_transcribe():
+    st, engine = make()
+    st.start()
+    st.feed(seconds(2.9))
+    st.process_pending()
+    assert engine.calls == []
+    st.finish()
 
 
 def test_finish_appends_tail_and_resets():
     st, engine = make()
     st.start()
-    st.feed(seconds(5))
+    st.feed(seconds(4))
     st.process_pending()
+    committed = list(st._committed)
     result = st.finish()
-    # committed prefix + transcription of the remaining 2 s tail
-    assert result == "seg0 seg1 seg2 seg0 seg1"
+    assert len(engine.calls) == 2  # one partial pass + one tail pass
+    assert result.startswith(committed[0])
+    assert len(result) > len(committed[0])  # tail text appended
     assert st._committed == []
     assert st._buffer.size == 0
 
 
-def test_short_capture_skips_partial_passes():
+def test_committed_text_becomes_decoding_context():
     st, engine = make()
     st.start()
-    st.feed(seconds(0.5))
-    st.process_pending()  # < 1 s — no engine call
-    assert engine.calls == []
+    st.feed(seconds(4))
+    st.process_pending()
+    assert engine.calls[0]["initial_prompt"] is None  # nothing committed yet
+    st.feed(seconds(2))
+    st.process_pending()
+    assert engine.calls[1]["initial_prompt"] == st._committed[0]
     st.finish()
-    assert len(engine.calls) == 1  # only the final tail pass
+    assert engine.calls[-1]["initial_prompt"]  # tail pass gets context too
+
+
+def test_quiet_cut_prefers_the_silence_gap():
+    st, _ = make(chunk_s=2.0)
+    buffer = 0.5 * np.sin(np.linspace(0, 800, 4 * SR)).astype(np.float32)
+    gap = int(1.8 * SR)
+    buffer[gap:gap + int(0.05 * SR)] = 0.0  # 50 ms pause at 1.8 s
+    cut = st._quiet_cut(buffer)
+    assert abs(cut / SR - 1.8) < 0.1
 
 
 def test_tiny_tail_is_not_transcribed():
@@ -73,29 +99,17 @@ def test_tiny_tail_is_not_transcribed():
     assert engine.calls == []
 
 
-def test_committed_text_becomes_context_for_next_passes():
-    st, engine = make()
-    st.start()
-    st.feed(seconds(5))
-    st.process_pending()
-    assert engine.calls[0]["initial_prompt"] is None  # nothing committed yet
-    st.feed(seconds(4))
-    st.process_pending()
-    assert engine.calls[1]["initial_prompt"] == "seg0 seg1 seg2"
-    st.finish()
-    assert engine.calls[-1]["initial_prompt"]  # tail pass gets context too
-
-
 def test_total_seconds_track_fed_audio():
     st, _ = make()
     st.start()
     st.feed(seconds(2))
     st.feed(seconds(1.5))
     assert abs(st.total_s - 3.5) < 1e-6
+    st.finish()
 
 
 def test_feed_after_finish_is_ignored():
-    st, engine = make()
+    st, _ = make()
     st.start()
     st.feed(seconds(2))
     st.finish()
@@ -104,27 +118,25 @@ def test_feed_after_finish_is_ignored():
 
 
 def test_worker_thread_processes_in_background():
-    st, engine = make(chunk_s=1.0)
-    st.start()
-    st.feed(seconds(4))
-    st._wake.set()
     import time
 
+    st, _ = make()
+    st.start()
+    st.feed(seconds(4))  # crosses the threshold → wakes the worker
     deadline = time.time() + 2
     while time.time() < deadline and not st._committed:
         time.sleep(0.02)
-    assert st._committed  # worker picked up the pending chunk
+    assert st._committed
     st.finish()
 
 
 def test_restart_after_finish_works():
     st, _ = make()
     st.start()
-    st.feed(seconds(5))
+    st.feed(seconds(4))
     st.process_pending()
-    st.finish()
+    first = st.finish()
     st.start()
-    st.feed(seconds(5))
+    st.feed(seconds(4))
     st.process_pending()
-    assert st._committed == ["seg0 seg1 seg2"]
-    assert st.finish() == "seg0 seg1 seg2 seg0 seg1"
+    assert st.finish() == first

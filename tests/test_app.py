@@ -359,6 +359,21 @@ def test_streaming_pipeline_uses_streamer_text():
     assert p["injector"].pasted == [("Hello world.", CTX)]
 
 
+def test_cleanup_off_pastes_transcript_verbatim():
+    app, p = make_app(cleaner=None, asr=FakeASR(text="hallo dies ist ein test"))
+    app._on_hotkey_press()
+    app._on_hotkey_release()
+    assert p["injector"].pasted == [("hallo dies ist ein test", CTX)]
+    assert p["commander"].requests == []
+
+
+def test_cleanup_off_still_routes_commands():
+    app, p = make_app(cleaner=None, asr=FakeASR(text="voice command do the thing"))
+    app._on_hotkey_press()
+    app._on_hotkey_release()
+    assert p["commander"].requests[0].instruction == "do the thing"
+
+
 def test_streaming_short_capture_is_dropped():
     streamer = FakeStreamer(text="hi", total_s=0.1)
     app, p = make_app(streamer=streamer)

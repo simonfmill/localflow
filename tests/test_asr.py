@@ -108,6 +108,38 @@ def test_accepts_wav_bytes(wav_fixture_bytes):
     assert len(audio) == int(1.5 * 16000)
 
 
+def test_mlx_engine_builds_transcript_and_maps_hotwords_to_prompt():
+    from localflow.asr import MlxWhisperEngine
+
+    calls = []
+
+    def fake_transcribe(audio, **kwargs):
+        calls.append(kwargs)
+        return {"text": " hallo welt ", "language": "de",
+                "segments": [{"start": 0.0, "end": 1.5, "text": "hallo welt"}]}
+
+    engine = MlxWhisperEngine(model_name="large-v3-turbo", language="auto",
+                              transcribe_fn=fake_transcribe)
+    result = engine.transcribe(np.zeros(16000, dtype=np.float32), hotwords="Layla")
+    assert result.text == "hallo welt"
+    assert result.lang == "de"
+    assert result.segments[0]["end"] == 1.5
+    assert calls[0]["path_or_hf_repo"] == "mlx-community/whisper-large-v3-turbo"
+    assert calls[0]["initial_prompt"] == "Layla"  # hotwords via prompt
+    assert calls[0]["language"] is None  # auto
+
+    engine.transcribe(np.zeros(16000, dtype=np.float32), hotwords="Layla",
+                      initial_prompt="der satz bisher")
+    assert calls[1]["initial_prompt"] == "der satz bisher"  # context wins
+
+
+def test_mlx_engine_accepts_full_repo_path():
+    from localflow.asr import MlxWhisperEngine
+
+    engine = MlxWhisperEngine(model_name="mlx-community/whisper-small")
+    assert engine.repo == "mlx-community/whisper-small"
+
+
 @pytest.mark.skipif(not os.environ.get("RUN_LIVE"), reason="set RUN_LIVE=1 for live ASR test")
 def test_live_transcription(wav_fixture_bytes):
     engine = WhisperEngine()
