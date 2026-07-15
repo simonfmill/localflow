@@ -22,6 +22,9 @@ echo "==> Setting up Python 3.12 environment…"
 echo "==> Installing LocalFlow (this takes a few minutes)…"
 if [ "$(uname -m)" = "arm64" ]; then
     "$UV" pip install --python "$DIR/.venv/bin/python" -e "$DIR[mlx]"
+    # mlx-whisper declares PyTorch (~500 MB) as a dependency but never uses
+    # it at runtime — remove it to keep the install lean (verified by tests).
+    "$UV" pip uninstall --python "$DIR/.venv/bin/python" torch sympy 2>/dev/null || true
 else
     echo "    (Intel Mac detected — using the CPU transcription backend.)"
     "$UV" pip install --python "$DIR/.venv/bin/python" -e "$DIR"
