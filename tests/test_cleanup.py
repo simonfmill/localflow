@@ -70,6 +70,22 @@ def test_full_mode_is_default_and_keeps_profile():
     assert SYSTEM_PROMPT in cleaner.build_messages(req())[0]["content"]
 
 
+def test_format_mode_structures_but_stays_verbatim():
+    from localflow.cleanup import FORMAT_SYSTEM_PROMPT
+
+    cleaner = OllamaCleaner(session=FakeOllamaSession(), mode="format")
+    system = cleaner.build_messages(req())[0]["content"]
+    assert FORMAT_SYSTEM_PROMPT in system
+    assert "Formatting profile" not in system  # tone profiles are full-mode only
+    assert "erstens" in FORMAT_SYSTEM_PROMPT  # list structure
+    assert "greeting" in FORMAT_SYSTEM_PROMPT  # email structure
+    assert "Leyla" in FORMAT_SYSTEM_PROMPT  # dictionary respell exception
+
+
+def test_light_and_format_prompts_allow_dictionary_respell():
+    assert "Leyla" in LIGHT_SYSTEM_PROMPT
+
+
 def test_keeps_enough_words():
     raw = "ähm ich denke dass wir das morgen nochmal besprechen sollten"
     assert keeps_enough_words(raw, "Ich denke, dass wir das morgen nochmal "

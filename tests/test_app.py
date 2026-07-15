@@ -10,6 +10,7 @@ class FakeRecorder:
     def __init__(self, audio=None):
         self.block_listeners = []
         self.audio = audio if audio is not None else np.zeros(SR, dtype=np.float32)
+        self.preroll = np.full(800, 0.1, dtype=np.float32)
         self.started = 0
         self.stopped = 0
 
@@ -18,6 +19,7 @@ class FakeRecorder:
 
     def start(self):
         self.started += 1
+        return self.preroll
 
     def stop(self):
         self.stopped += 1
@@ -320,6 +322,50 @@ def test_double_press_is_ignored_while_recording():
 
 def test_state_constants():
     assert (IDLE, RECORDING, PROCESSING) == ("idle", "recording", "processing")
+
+
+class FakeStreamer:
+    def __init__(self, text="um hello world", total_s=2.0):
+        self.text = text
+        self.total_s = total_s
+        self.started_with = []
+        self.fed = []
+        self.finished = 0
+
+    def start(self, hotwords=None):
+        self.started_with.append(hotwords)
+
+    def feed(self, block):
+        self.fed.append(len(block))
+
+    def finish(self):
+        self.finished += 1
+        return self.text
+
+
+def test_streaming_pipeline_uses_streamer_text():
+    streamer = FakeStreamer(text="um hello world")
+    app, p = make_app(streamer=streamer)
+    app._on_hotkey_press()
+    assert streamer.started_with == ["Qwen"]  # dictionary as hotwords
+    assert streamer.fed == [800]  # preroll ingested
+    block = np.zeros(1600, dtype=np.float32)
+    app._on_block(block)
+    assert streamer.fed == [800, 1600]
+    app._on_hotkey_release()
+    assert streamer.finished == 1
+    assert p["asr"].calls == []  # no separate full-pass transcription
+    assert p["cleaner"].requests[0].raw_text == "um hello world"
+    assert p["injector"].pasted == [("Hello world.", CTX)]
+
+
+def test_streaming_short_capture_is_dropped():
+    streamer = FakeStreamer(text="hi", total_s=0.1)
+    app, p = make_app(streamer=streamer)
+    app._on_hotkey_press()
+    app._on_hotkey_release()
+    assert streamer.finished == 1
+    assert p["injector"].pasted == []
 
 
 def test_overlay_shows_on_press_and_hides_on_release():

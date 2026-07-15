@@ -64,13 +64,20 @@ class Recorder:
             cb(block)
 
     def start(self):
-        """Begin a capture; the current ring-buffer contents become the pre-roll."""
+        """Begin a capture; the current ring-buffer contents become the pre-roll.
+
+        Returns the pre-roll audio so streaming consumers can ingest it (block
+        listeners only see blocks that arrive after this call).
+        """
         self.open()
         with self._lock:
             self._chunks = list(self._ring)
+            preroll = (np.concatenate(self._chunks) if self._chunks
+                       else np.zeros(0, dtype=np.float32))
             self._ring.clear()
             self._ring_frames = 0
             self._recording = True
+        return preroll
 
     def stop(self) -> np.ndarray:
         """End the capture and return the recorded mono float32 audio."""

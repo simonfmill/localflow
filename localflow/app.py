@@ -19,8 +19,8 @@ PROCESSING = "processing"
 class LocalFlowApp:
     def __init__(self, *, recorder, asr, cleaner, commander, injector,
                  context_provider, dictionary, hotkey, tray=None, vad=None,
-                 overlay=None, correction_combo=None, editor_opener=None,
-                 selection_provider=None, min_duration_s=0.3,
+                 overlay=None, streamer=None, correction_combo=None,
+                 editor_opener=None, selection_provider=None, min_duration_s=0.3,
                  samplerate=16000, threaded=True):
         self.recorder = recorder
         self.asr = asr
@@ -33,6 +33,7 @@ class LocalFlowApp:
         self.tray = tray
         self.vad = vad
         self.overlay = overlay
+        self.streamer = streamer
         self.correction_combo = correction_combo
         self._editor_opener = editor_opener or self._default_editor_opener
         self.selection_provider = selection_provider
@@ -108,7 +109,11 @@ class LocalFlowApp:
             log.info("hotkey pressed — recording")
             if self.vad is not None:
                 self.vad.reset()
-            self.recorder.start()
+            if self.streamer is not None:
+                self.streamer.start(hotwords=self._hotwords())
+            preroll = self.recorder.start()
+            if self.streamer is not None and preroll is not None and len(preroll):
+                self.streamer.feed(preroll)
             if self.tray is not None:
                 self.tray.set_recording(True)
             if self.overlay is not None:
@@ -147,19 +152,32 @@ class LocalFlowApp:
 
     def _process_safe(self, audio):
         try:
-            self.process(audio)
+            if self.streamer is not None:
+                t0 = time.perf_counter()
+                text = self.streamer.finish().strip()
+                log.info("transcript (streaming, tail %.2fs): %r",
+                         time.perf_counter() - t0, text)
+                if text and self.streamer.total_s >= self.min_duration_s:
+                    self.deliver(text)
+            else:
+                self.process(audio)
         except Exception:
             log.exception("pipeline failed")
         finally:
             with self._lock:
                 self._state = IDLE
 
+    def _hotwords(self):
+        return ", ".join(self.dictionary.terms) or None
+
     def _on_block(self, block):
-        """Audio-thread callback: waveform overlay levels + VAD auto-stop."""
+        """Audio-thread callback: overlay levels, streaming ASR, VAD auto-stop."""
         if self._state != RECORDING:
             return
         if self.overlay is not None:
             self.overlay.feed(rms(block))
+        if self.streamer is not None:
+            self.streamer.feed(block)
         if self.vad is not None and self.vad.feed(block):
             self._on_hotkey_release()
 
@@ -168,12 +186,14 @@ class LocalFlowApp:
             log.info("capture too short (< %.1fs) — dropped", self.min_duration_s)
             return
         t0 = time.perf_counter()
-        hotwords = ", ".join(self.dictionary.terms) or None
-        transcript = self.asr.transcribe(audio, hotwords=hotwords)
+        transcript = self.asr.transcribe(audio, hotwords=self._hotwords())
         text = transcript.text.strip()
         log.info("transcript (asr %.2fs): %r", time.perf_counter() - t0, text)
         if not text:
             return
+        self.deliver(text)
+
+    def deliver(self, text):
         ctx = self.context_provider()
         selection = self.selection_provider() if self.selection_provider else None
         t1 = time.perf_counter()
@@ -235,6 +255,7 @@ def build_default(cfg: dict) -> LocalFlowApp:
     from localflow.hotkey import PushToTalkListener
     from localflow.inject import ClipboardInjector
     from localflow.overlay import RecordingOverlay
+    from localflow.streaming import StreamingTranscriber
     from localflow.tray import LocalFlowTray
     from localflow.vad import SilenceDetector
 
@@ -270,9 +291,13 @@ def build_default(cfg: dict) -> LocalFlowApp:
     overlay = None
     if overlay_cfg.get("enabled", True):
         overlay = RecordingOverlay(position=overlay_cfg.get("position", "bottom-center"))
+    streamer = None
+    if cfg["pipeline"].get("streaming", True):
+        streamer = StreamingTranscriber(asr, samplerate=audio_cfg["samplerate"])
     app = LocalFlowApp(recorder=recorder, asr=asr, cleaner=cleaner, commander=commander,
                        injector=injector, context_provider=detect, dictionary=dictionary,
                        hotkey=hotkey, tray=None, vad=vad, overlay=overlay,
+                       streamer=streamer,
                        correction_combo=cfg["hotkey"].get("correction_combo", "ctrl+alt+c"),
                        min_duration_s=cfg["pipeline"]["min_duration_s"],
                        samplerate=audio_cfg["samplerate"])

@@ -44,10 +44,12 @@ dictionary:
   path: "~/.config/localflow/dictionary.json"
 
 cleanup:
-  # "full": remove fillers, apply self-corrections, format spoken lists,
-  #         adapt tone per app. "light": only remove fillers and add
-  #         punctuation/capitalization — everything else stays verbatim.
-  #         Use "light" if the model rewrites your speech too aggressively.
+  # "full":   remove fillers, apply self-corrections, format spoken lists,
+  #           adapt tone per app.
+  # "format": keep every word verbatim, but add structure — numbered lists,
+  #           email greeting/sign-off lines, paragraph breaks.
+  # "light":  only remove fillers and add punctuation/capitalization.
+  # Use "format" or "light" if the model rewrites your speech too much.
   mode: "full"
 
 overlay:
@@ -60,3 +62,6 @@ paste:
 
 pipeline:
   min_duration_s: 0.3
+  # Transcribe while you speak so long dictations paste almost immediately
+  # after key release instead of waiting for a full transcription pass.
+  streaming: true
