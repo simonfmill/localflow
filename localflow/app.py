@@ -52,6 +52,7 @@ class LocalFlowApp:
 
     def _request_correction(self):
         """Hotkey handler: open the correction dialog on the main thread."""
+        log.info("correction hotkey pressed — opening dialog")
         if self.tray is not None:
             self._correction_dispatch(self.tray._correct, None)
 

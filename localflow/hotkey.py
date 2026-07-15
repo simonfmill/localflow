@@ -72,8 +72,20 @@ class PushToTalkListener:
             self._chords.append({"required": required, "cb": callback, "active": False})
             self._watched |= required
 
+    def _canonical(self, key):
+        """Resolve the key ignoring held modifiers (Option+C arrives as 'ç')."""
+        listener = self._listener
+        if listener is not None and hasattr(listener, "canonical"):
+            try:
+                return listener.canonical(key)
+            except Exception:
+                return key
+        return key
+
     def _handle_press(self, key):
         token = _token_for(key)
+        if token not in self._watched:
+            token = _token_for(self._canonical(key))
         if token not in self._watched:
             return
         self._pressed.add(token)
@@ -88,6 +100,8 @@ class PushToTalkListener:
 
     def _handle_release(self, key):
         token = _token_for(key)
+        if token not in self._watched:
+            token = _token_for(self._canonical(key))
         if token not in self._watched:
             return
         self._pressed.discard(token)

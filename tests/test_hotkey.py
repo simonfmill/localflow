@@ -122,6 +122,22 @@ def test_chord_fires_once_and_rearms_on_release():
     assert chords == [1, 1]
 
 
+def test_chord_resolves_option_transformed_characters():
+    # Option+C arrives as 'ç' on macOS; the listener's canonical() resolves it.
+    ptt, _, _, created = make_listener(combo="cmd+alt")
+    ptt.start()
+    created["listener"].canonical = lambda key: C_KEY
+    chords = []
+    ptt.add_chord("ctrl+alt+c", lambda: chords.append(1))
+    ptt._handle_press(CTRL)
+    ptt._handle_press(ALT)
+    ptt._handle_press(SimpleNamespace(name=None, char="ç", vk=8))
+    assert chords == [1]
+    ptt._handle_release(SimpleNamespace(name=None, char="ç", vk=8))
+    ptt._handle_press(SimpleNamespace(name=None, char="ç", vk=8))
+    assert chords == [1, 1]  # release re-armed the chord despite transform
+
+
 def test_chord_does_not_break_push_to_talk():
     ptt, presses, releases, _ = make_listener(combo="fn+ctrl")
     ptt.add_chord("ctrl+alt+c", lambda: None)
