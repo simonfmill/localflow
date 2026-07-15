@@ -41,9 +41,20 @@ class LocalFlowTray:
         if self._on_toggle:
             self._on_toggle(self.enabled)
 
+    @staticmethod
+    def _activate_app():
+        """Bring this (background) app forward so modal dialogs are visible."""
+        try:
+            from AppKit import NSApplication
+
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
+
     def _correct(self, _item):
         """Let the user fix the last pasted text; learned terms go to the dictionary."""
         last = self._get_last_text() if self._get_last_text else None
+        self._activate_app()
         if not last:
             self._rumps.alert("Nothing to correct yet — dictate something first.")
             return
